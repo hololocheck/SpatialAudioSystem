@@ -1,0 +1,35 @@
+{
+  "itemGroup.spatialaudiosystem": "Spatial Audio System",
+
+  "block.spatialaudiosystem.playback_device": "\u518d\u751f\u88c5\u7f6e",
+  "block.spatialaudiosystem.recording_device": "\u8a18\u61b6\u88c5\u7f6e",
+
+  "item.spatialaudiosystem.recording_medium": "\u8a18\u9332\u5a92\u4f53",
+  "item.spatialaudiosystem.range_board": "\u7bc4\u56f2\u6307\u5b9a\u30dc\u30fc\u30c9",
+
+  "tooltip.spatialaudiosystem.recording_medium.empty": "\u7a7a - \u8a18\u9332\u88c5\u7f6e\u3067\u97f3\u58f0\u3092\u66f8\u304d\u8fbc\u3093\u3067\u304f\u3060\u3055\u3044",
+  "tooltip.spatialaudiosystem.recording_medium.audio": "\u97f3\u58f0: %s",
+  "tooltip.spatialaudiosystem.range_board.no_range": "\u30d6\u30ed\u30c3\u30af\u3092\u53f3\u30af\u30ea\u30c3\u30af\u3057\u3066\u7bc4\u56f2\u3092\u8a2d\u5b9a",
+  "tooltip.spatialaudiosystem.range_board.set_pos2": "\u5225\u306e\u30d6\u30ed\u30c3\u30af\u3092\u53f3\u30af\u30ea\u30c3\u30af\u3057\u3066\u7b2c2\u5730\u70b9\u3092\u8a2d\u5b9a",
+
+  "gui.spatialaudiosystem.select_file": "\u30d5\u30a1\u30a4\u30eb\u9078\u629e",
+  "gui.spatialaudiosystem.no_file": "\u30d5\u30a1\u30a4\u30eb\u672a\u9078\u629e",
+  "gui.spatialaudiosystem.recording": "\u66f8\u304d\u8fbc\u307f\u4e2d...",
+  "gui.spatialaudiosystem.show_range": "\u7bc4\u56f2\u8868\u793a",
+  "gui.spatialaudiosystem.hide_range": "\u7bc4\u56f2\u975e\u8868\u793a",
+
+  "gui.spatialaudiosystem.status_playing": "\u72b6\u614b: \u518d\u751f\u4e2d",
+  "gui.spatialaudiosystem.status_stopped": "\u72b6\u614b: \u505c\u6b62",
+  "gui.spatialaudiosystem.status_writing": "\u72b6\u614b: \u66f8\u8fbc\u4e2d...",
+  "gui.spatialaudiosystem.status_ready": "\u72b6\u614b: \u6e96\u5099\u5b8c\u4e86",
+  "gui.spatialaudiosystem.file_prefix": "\u30d5\u30a1\u30a4\u30eb: %s",
+  "gui.spatialaudiosystem.format_prefix": "\u5f62\u5f0f: %s",
+  "gui.spatialaudiosystem.type_prefix": "\u7a2e\u985e: %s",
+  "gui.spatialaudiosystem.attenuation_range": "\u6e1b\u8870\u7bc4\u56f2: %d \u30d6\u30ed\u30c3\u30af",
+  "gui.spatialaudiosystem.no_media": "\u30e1\u30c7\u30a3\u30a2\u306a\u3057",
+  "gui.spatialaudiosystem.no_file_selected": "\u30d5\u30a1\u30a4\u30eb\u672a\u9078\u629e",
+
+  "message.spatialaudiosystem.pos1_set": "\u5730\u70b91\u8a2d\u5b9a: %d, %d, %d",
+  "message.spatialaudiosystem.pos2_set": "\u5730\u70b92\u8a2d\u5b9a: %d, %d, %d",
+  "message.spatialaudiosystem.range_cleared": "\u7bc4\u56f2\u3092\u89e3\u9664\u3057\u307e\u3057\u305f"
+}

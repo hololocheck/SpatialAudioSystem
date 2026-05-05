@@ -1,6 +1,0 @@
-{
-  "parent": "minecraft:item/generated",
-  "textures": {
-    "layer0": "stationsoundsystem:item/recording_medium_wav"
-  }
-}

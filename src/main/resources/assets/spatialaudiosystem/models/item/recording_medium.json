@@ -1,0 +1,11 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "spatialaudiosystem:item/recording_medium"
+  },
+  "overrides": [
+    { "predicate": { "spatialaudiosystem:audio_format": 1 }, "model": "spatialaudiosystem:item/recording_medium_mp3" },
+    { "predicate": { "spatialaudiosystem:audio_format": 2 }, "model": "spatialaudiosystem:item/recording_medium_ogg" },
+    { "predicate": { "spatialaudiosystem:audio_format": 3 }, "model": "spatialaudiosystem:item/recording_medium_wav" }
+  ]
+}

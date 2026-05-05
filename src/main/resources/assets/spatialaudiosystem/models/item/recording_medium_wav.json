@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "spatialaudiosystem:item/recording_medium_wav"
+  }
+}

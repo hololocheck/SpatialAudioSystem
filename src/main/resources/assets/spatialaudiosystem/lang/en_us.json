@@ -1,0 +1,35 @@
+{
+  "itemGroup.spatialaudiosystem": "Spatial Audio System",
+
+  "block.spatialaudiosystem.playback_device": "Playback Device",
+  "block.spatialaudiosystem.recording_device": "Memory Device",
+
+  "item.spatialaudiosystem.recording_medium": "Recording Medium",
+  "item.spatialaudiosystem.range_board": "Range Board",
+
+  "tooltip.spatialaudiosystem.recording_medium.empty": "Empty - Use Recording Device to write audio",
+  "tooltip.spatialaudiosystem.recording_medium.audio": "Audio: %s",
+  "tooltip.spatialaudiosystem.range_board.no_range": "Right-click blocks to set range",
+  "tooltip.spatialaudiosystem.range_board.set_pos2": "Right-click another block to set second position",
+
+  "gui.spatialaudiosystem.select_file": "Select File",
+  "gui.spatialaudiosystem.no_file": "No file selected",
+  "gui.spatialaudiosystem.recording": "Recording...",
+  "gui.spatialaudiosystem.show_range": "Show Range",
+  "gui.spatialaudiosystem.hide_range": "Hide Range",
+
+  "gui.spatialaudiosystem.status_playing": "Status: Playing",
+  "gui.spatialaudiosystem.status_stopped": "Status: Stopped",
+  "gui.spatialaudiosystem.status_writing": "Status: Writing...",
+  "gui.spatialaudiosystem.status_ready": "Status: Ready",
+  "gui.spatialaudiosystem.file_prefix": "File: %s",
+  "gui.spatialaudiosystem.format_prefix": "Format: %s",
+  "gui.spatialaudiosystem.type_prefix": "Type: %s",
+  "gui.spatialaudiosystem.attenuation_range": "Attenuation Range: %d blocks",
+  "gui.spatialaudiosystem.no_media": "No media",
+  "gui.spatialaudiosystem.no_file_selected": "No file selected",
+
+  "message.spatialaudiosystem.pos1_set": "Position 1 set: %d, %d, %d",
+  "message.spatialaudiosystem.pos2_set": "Position 2 set: %d, %d, %d",
+  "message.spatialaudiosystem.range_cleared": "Range cleared"
+}

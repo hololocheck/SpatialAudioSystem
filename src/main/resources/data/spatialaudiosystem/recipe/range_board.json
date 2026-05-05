@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " P ",
+    "PEP",
+    " P "
+  ],
+  "key": {
+    "P": { "item": "minecraft:paper" },
+    "E": { "item": "minecraft:ender_pearl" }
+  },
+  "result": {
+    "id": "spatialaudiosystem:range_board",
+    "count": 1
+  }
+}

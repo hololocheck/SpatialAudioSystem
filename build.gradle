@@ -6,8 +6,8 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.42-beta'
 }
 
-version = '1.0.3'
-group = 'com.example.stationsoundsystem'
+version = '1.0.4'
+group = 'com.spatialaudiosystem'
 
 repositories {
     mavenLocal()
@@ -15,7 +15,7 @@ repositories {
 }
 
 base {
-    archivesName = 'stationsoundsystem'
+    archivesName = 'spatialaudiosystem'
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
@@ -26,17 +26,17 @@ neoForge {
     runs {
         client {
             client()
-            systemProperty 'neoforge.enabledGameTestNamespaces', 'stationsoundsystem'
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'spatialaudiosystem'
         }
         server {
             server()
             programArgument '--nogui'
-            systemProperty 'neoforge.enabledGameTestNamespaces', 'stationsoundsystem'
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'spatialaudiosystem'
         }
     }
 
     mods {
-        stationsoundsystem {
+        spatialaudiosystem {
             sourceSet sourceSets.main
         }
     }

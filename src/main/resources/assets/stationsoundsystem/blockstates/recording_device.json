@@ -1,8 +1,0 @@
-{
-  "variants": {
-    "facing=north": { "model": "stationsoundsystem:block/recording_device" },
-    "facing=south": { "model": "stationsoundsystem:block/recording_device", "y": 180 },
-    "facing=east": { "model": "stationsoundsystem:block/recording_device", "y": 90 },
-    "facing=west": { "model": "stationsoundsystem:block/recording_device", "y": 270 }
-  }
-}

@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "III",
+    "IRI",
+    "INI"
+  ],
+  "key": {
+    "I": { "item": "minecraft:iron_ingot" },
+    "R": { "item": "minecraft:redstone" },
+    "N": { "item": "minecraft:note_block" }
+  },
+  "result": {
+    "id": "spatialaudiosystem:playback_device",
+    "count": 1
+  }
+}

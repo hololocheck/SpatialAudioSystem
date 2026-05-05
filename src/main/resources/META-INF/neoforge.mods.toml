@@ -4,9 +4,9 @@ license = "MIT"
 issueTrackerURL = ""
 
 [[mods]]
-modId = "stationsoundsystem"
+modId = "spatialaudiosystem"
 version = "1.0.3"
-displayName = "Station Sound System"
+displayName = "Spatial Audio System"
 logoFile = "icon.png"
 authors = "hololocheck"
 description = '''
@@ -15,14 +15,14 @@ Includes playback devices, recording devices, recording media, and range specifi
 '''
 
 
-[[dependencies.stationsoundsystem]]
+[[dependencies.spatialaudiosystem]]
 modId = "neoforge"
 type = "required"
 versionRange = "[21.1,)"
 ordering = "NONE"
 side = "BOTH"
 
-[[dependencies.stationsoundsystem]]
+[[dependencies.spatialaudiosystem]]
 modId = "minecraft"
 type = "required"
 versionRange = "[1.21.1,1.22)"

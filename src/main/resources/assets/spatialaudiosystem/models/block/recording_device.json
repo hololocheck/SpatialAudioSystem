@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "end": "spatialaudiosystem:block/recording_device_top",
+    "side": "spatialaudiosystem:block/recording_device_side"
+  }
+}
