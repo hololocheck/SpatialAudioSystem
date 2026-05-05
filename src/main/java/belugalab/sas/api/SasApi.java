@@ -93,6 +93,16 @@ public final class SasApi {
         return recordingMedium.get(ModDataComponents.AUDIO_ID.get());
     }
 
+    /**
+     * @return audio duration in integer seconds, or 0 if unknown.
+     *         Computed on the recording device at save time and cached as a data component.
+     */
+    public static int getAudioDurationSeconds(ItemStack recordingMedium) {
+        if (recordingMedium == null || recordingMedium.isEmpty()) return 0;
+        Integer d = recordingMedium.get(ModDataComponents.AUDIO_DURATION_SEC.get());
+        return d != null ? d : 0;
+    }
+
     // ========================== Range board queries ==========================
 
     /** @return true if both range corners are set on the range board. */

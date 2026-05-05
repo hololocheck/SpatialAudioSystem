@@ -155,6 +155,9 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
             outputStack.remove(ModDataComponents.AUDIO_DATA); // ensure no legacy data
             outputStack.set(ModDataComponents.AUDIO_FILE_NAME, pendingFileName);
             outputStack.set(ModDataComponents.AUDIO_FORMAT, pendingFormat);
+            // Duration を計算して保存 (整数秒、不能なら 0)
+            int durSec = com.spatialaudiosystem.audio.AudioDuration.compute(pendingAudioData, pendingFormat);
+            if (durSec > 0) outputStack.set(ModDataComponents.AUDIO_DURATION_SEC, durSec);
 
             inventory.setStackInSlot(INPUT_SLOT, ItemStack.EMPTY);
             inventory.setStackInSlot(OUTPUT_SLOT, outputStack);

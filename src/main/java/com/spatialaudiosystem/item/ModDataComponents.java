@@ -60,6 +60,13 @@ public class ModDataComponents {
                     .networkSynchronized(ByteBufCodecs.STRING_UTF8)
                     .build());
 
+    /** Audio duration in seconds (integer, rounded). 0 if unknown. */
+    public static final Supplier<DataComponentType<Integer>> AUDIO_DURATION_SEC = DATA_COMPONENTS.register("audio_duration_sec",
+            () -> DataComponentType.<Integer>builder()
+                    .persistent(Codec.INT)
+                    .networkSynchronized(ByteBufCodecs.VAR_INT)
+                    .build());
+
     public static final Supplier<DataComponentType<BlockPos>> RANGE_POS1 = DATA_COMPONENTS.register("range_pos1",
             () -> DataComponentType.<BlockPos>builder()
                     .persistent(BlockPos.CODEC)
