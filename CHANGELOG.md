@@ -1,5 +1,40 @@
 # Changelog
 
+> English version: [CHANGELOG-EN.md](CHANGELOG-EN.md)
+
+## [1.0.4] - 2026-05-05
+
+### 重要な変更 (Mod のリネーム / ID 変更)
+
+- **Mod 名を「Station Sound System」から「Spatial Audio System」に変更**
+  鉄道駅専用ではなく汎用的な空間音響再生 Mod として位置づけを明確化。
+  - Mod ID: `stationsoundsystem` → `spatialaudiosystem`
+  - 表示名: `Station Sound System` → `Spatial Audio System`
+  - Java パッケージ root: `com.example.stationsoundsystem` → `com.spatialaudiosystem`
+  - メインクラス: `StationSoundSystem` → `SpatialAudioSystem`
+  - リソース ID (`assets/`、`data/`)・GitHub リポジトリ名も同名に変更
+  - **既存ワールドから 1.0.3 以前の記録媒体・再生装置・範囲指定ボードを引き継ぐと認識されないので、新規ワールドへ移行するか、各アイテム / ブロックを置き直す必要があります**
+
+### 公開 API の追加 (他 Mod 連携用)
+
+- **新パッケージ `belugalab.sas.api`** を追加。バージョン間で安定した API 表面として維持されます (内部パッケージ `com.spatialaudiosystem.*` はリパッケージされるため、addon mod は必ずこちらを参照してください)。
+- **`belugalab.sas.api.SasApi`** — facade クラス
+  - `isInstalled` — SAS が読み込まれているか
+  - `isRecordingMedium`, `isRangeBoard` — アイテム種別判定
+  - `hasAudio`, `getAudioFileName`, `getAudioFormat`, `getAudioId` — 記録媒体メタデータ
+  - `hasRange`, `getRangePos1`, `getRangePos2`, `getAttenuationRanges` — 範囲指定ボードのメタデータ
+  - `loadAudio`, `loadAudioFromMedium` — サーバー側の音声バイナリ読み込み
+  - `playAudio` — サーバー側からブロードキャスト再生
+  - `stopAudio` — 指定位置の再生停止
+- **`belugalab.sas.api.PlaybackEndedEvent`** (NeoForge event)
+  - 再生完了時に発火。連鎖再生 / シーケンシャル再生を実装する mod が polling 不要で連結できる
+  - `PlaybackControlPayload` の停止通知ハンドラからも発火するため、`PlaybackDeviceBlockEntity` を介さない `playAudio` 呼び出し (= addon mod 側で動的に再生する場合) もカバー
+
+### Bug Fixes
+
+- **ワールドを抜けた後にタイトル画面で音声が鳴り続ける問題を修正**
+  新規 `ClientLifecycleHandler` で `ClientPlayerNetworkEvent.LoggingOut` と `LevelEvent.Unload` を購読し、`AudioManager.stopAll()` を呼ぶように変更。送受信中の `ClientAudioChunkPayload` チャンクセッションも一括クリアするため、再ログイン後に旧セッションの残骸が混ざる問題も併せて解消。
+
 ## [1.0.3] - 2026-03-23
 
 ### 重要な変更

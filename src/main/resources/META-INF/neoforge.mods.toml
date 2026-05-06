@@ -5,7 +5,7 @@ issueTrackerURL = ""
 
 [[mods]]
 modId = "spatialaudiosystem"
-version = "1.0.3"
+version = "1.0.4"
 displayName = "Spatial Audio System"
 logoFile = "icon.png"
 authors = "hololocheck"
