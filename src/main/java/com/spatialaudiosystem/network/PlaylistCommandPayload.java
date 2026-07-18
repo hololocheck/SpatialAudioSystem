@@ -3,13 +3,15 @@ package com.spatialaudiosystem.network;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.audio.PlaybackScheduler;
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
+import com.spatialaudiosystem.server.ServerInteractionGuard;
+import io.netty.handler.codec.DecoderException;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -32,23 +34,47 @@ public record PlaylistCommandPayload(BlockPos pos, int op, int a1, int a2) imple
                     ResourceLocation.fromNamespaceAndPath(SpatialAudioSystem.MOD_ID, "playlist_cmd"));
 
     public static final StreamCodec<FriendlyByteBuf, PlaylistCommandPayload> STREAM_CODEC =
-            StreamCodec.of(
-                    (buf, p) -> {
-                        buf.writeBlockPos(p.pos);
-                        buf.writeInt(p.op);
-                        buf.writeInt(p.a1);
-                        buf.writeInt(p.a2);
-                    },
-                    buf -> new PlaylistCommandPayload(buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readInt()));
+            StreamCodec.of(PlaylistCommandPayload::write, PlaylistCommandPayload::read);
+
+    private static void write(FriendlyByteBuf buf, PlaylistCommandPayload payload) {
+        buf.writeBlockPos(payload.pos);
+        buf.writeInt(payload.op);
+        buf.writeInt(payload.a1);
+        buf.writeInt(payload.a2);
+    }
+
+    /**
+     * Bounds live here so no handler downstream has to re-derive them: {@code a1} is always an
+     * entry index, {@code a2} is either a target index or a play-count delta. Decoding an
+     * out-of-range value is refused outright — an unchecked index reached the playlist handler
+     * directly and threw out of the server thread.
+     */
+    private static PlaylistCommandPayload read(FriendlyByteBuf buf) {
+        BlockPos pos = buf.readBlockPos();
+        int op = buf.readInt();
+        int a1 = buf.readInt();
+        int a2 = buf.readInt();
+        if (op < OP_PLAY_ALL || op > OP_REORDER) {
+            throw new DecoderException("Invalid playlist op: " + op);
+        }
+        if (a1 < 0 || a1 >= PlaybackDeviceBlockEntity.MAX_ENTRIES) {
+            throw new DecoderException("Playlist entry index out of range: " + a1);
+        }
+        if (a2 < -PlaybackDeviceBlockEntity.MAX_PLAY_COUNT
+                || a2 > PlaybackDeviceBlockEntity.MAX_ENTRIES) {
+            throw new DecoderException("Playlist argument out of range: " + a2);
+        }
+        return new PlaylistCommandPayload(pos, op, a1, a2);
+    }
 
     public static void handle(PlaylistCommandPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            if (!(player.level() instanceof ServerLevel level)) return;
-            if (player.distanceToSqr(payload.pos.getX() + 0.5, payload.pos.getY() + 0.5,
-                    payload.pos.getZ() + 0.5) > 64) return;
-            if (!(level.getBlockEntity(payload.pos) instanceof PlaybackDeviceBlockEntity be)) return;
-            if (!be.canAccess(player)) return;
+            Player player = context.player();
+            // Same gate as every other device packet: the sender must actually have this
+            // device's screen open, and still be allowed to use it.
+            PlaybackDeviceBlockEntity be = ServerInteractionGuard.playbackDevice(player, payload.pos);
+            if (be == null) return;
+            if (!(be.getLevel() instanceof ServerLevel level)) return;
 
             switch (payload.op) {
                 case OP_PLAY_ALL -> PlaybackScheduler.playAll(level, payload.pos);

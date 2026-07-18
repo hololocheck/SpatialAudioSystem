@@ -24,7 +24,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
-public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvider {
+public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvider, OwnedDevice {
     public static final int INPUT_SLOT = 0;
     public static final int OUTPUT_SLOT = 1;
     public static final int SLOT_COUNT = 2;
@@ -74,10 +74,7 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
     @Nullable
     @Override
     public AbstractContainerMenu createMenu(int containerId, Inventory playerInventory, Player player) {
-        if (ownerUUID == null && player != null) {
-            setOwner(player.getUUID(), player.getName().getString());
-        }
-        if (player != null && !canAccess(player)) return null;   // private device: owner only
+        if (!claimAndAllow(player)) return null;   // private device: owner only
         return new RecordingDeviceMenu(containerId, playerInventory, this);
     }
 
@@ -85,11 +82,13 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         return inventory;
     }
 
+    @Override
     @Nullable
     public java.util.UUID getOwnerUUID() {
         return ownerUUID;
     }
 
+    @Override
     public void setOwner(java.util.UUID uuid, String name) {
         this.ownerUUID = uuid;
         this.ownerName = name;
@@ -97,20 +96,16 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         syncToClients();
     }
 
+    @Override
     public boolean isPrivateMode() {
         return privateMode;
     }
 
-    /** Flip public/private. Only the owner should reach this (guarded in the menu). */
+    @Override
     public void togglePrivateMode() {
         privateMode = !privateMode;
         setChanged();
         syncToClients();
-    }
-
-    /** Public devices are open to all; private ones are owner-only. */
-    public boolean canAccess(Player player) {
-        return !privateMode || ownerUUID == null || ownerUUID.equals(player.getUUID());
     }
 
     private void syncToClients() {
@@ -203,6 +198,7 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
 
     private void finishRecording() {
         ItemStack inputStack = inventory.getStackInSlot(INPUT_SLOT);
+        boolean written = false;
         if (!inputStack.isEmpty() && pendingAudioData != null && level != null && level.getServer() != null) {
             // Save audio to server-side file instead of ItemStack component
             java.util.UUID audioId = AudioStorage.save(level.getServer(), pendingAudioData);
@@ -234,12 +230,18 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
 
             inventory.setStackInSlot(INPUT_SLOT, ItemStack.EMPTY);
             inventory.setStackInSlot(OUTPUT_SLOT, outputStack);
+            written = true;
         }
         isRecording = false;
         recordingProgress = 0;
-        pendingAudioData = null;
-        pendingFileName = null;
-        pendingFormat = null;
+        // Only a medium that actually received the audio consumes the pick. Pulling the input
+        // out mid-write used to discard the upload here, the same loss the failed-save branch
+        // above goes out of its way to avoid; the operator can now insert another medium.
+        if (written) {
+            pendingAudioData = null;
+            pendingFileName = null;
+            pendingFormat = null;
+        }
         setChanged();
     }
 

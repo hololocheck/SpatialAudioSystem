@@ -125,10 +125,7 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (id == belugalab.tsu.api.OwnerAccess.TOGGLE_BUTTON) {
-            java.util.UUID owner = blockEntity.getOwnerUUID();
-            if (owner == null || owner.equals(player.getUUID())) {   // owner-only toggle
-                blockEntity.togglePrivateMode();
-            }
+            blockEntity.toggleOwnerAccess(player);   // owner-only; a no-op for anyone else
             return true;
         }
         return super.clickMenuButton(player, id);

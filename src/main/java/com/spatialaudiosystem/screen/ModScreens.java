@@ -17,10 +17,7 @@ import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 public class ModScreens {
     @SubscribeEvent
     public static void registerScreens(RegisterMenuScreensEvent event) {
-        // Playback screen migrated to Manta (Stage 8). The old PlaybackDeviceScreen is kept
-        // for rollback — flip this one line back to switch factories.
         event.register(ModMenuTypes.PLAYBACK_DEVICE_MENU.get(), PlaybackDeviceScreenV2::new);
-        // Recording screen migrated to Manta (Stage 9). Old RecordingDeviceScreen kept for rollback.
         event.register(ModMenuTypes.RECORDING_DEVICE_MENU.get(), RecordingDeviceScreenV2::new);
     }
 

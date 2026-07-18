@@ -55,9 +55,10 @@ public final class PlaybackScheduler {
         advance(level, s);
     }
 
-    /** Preview a single playlist entry (no sequence advance). */
+    /** Preview a single playlist entry (no sequence advance). Ignores an index with no entry. */
     public static void testEntry(ServerLevel level, BlockPos pos, int idx) {
         if (!(level.getBlockEntity(pos) instanceof PlaybackDeviceBlockEntity be)) return;
+        if (idx < 0 || idx >= be.getEntryCount()) return;
         if (be.playMedia(be.getPlaylist().getStackInSlot(idx))) {
             Seq s = new Seq(pos, level.dimension());
             s.entryIdx = idx;

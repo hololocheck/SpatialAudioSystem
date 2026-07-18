@@ -1,5 +1,6 @@
 package com.spatialaudiosystem.server;
 
+import com.spatialaudiosystem.blockentity.OwnedDevice;
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
 import com.spatialaudiosystem.blockentity.RecordingDeviceBlockEntity;
 import com.spatialaudiosystem.menu.PlaybackDeviceMenu;
@@ -53,6 +54,10 @@ public final class ServerInteractionGuard {
         // stillValid checks reach against the menu's own level, so a sender who has changed
         // dimension with the menu still open would otherwise be measured in the wrong world.
         if (blockEntity.getLevel() != sender.level()) return null;
+
+        // Owner access is re-checked per packet, not just when the screen opened: a device the
+        // owner switches to private must stop obeying anyone who still has it on screen.
+        if (blockEntity instanceof OwnedDevice owned && !owned.canAccess(sender)) return null;
 
         return sender.containerMenu.stillValid(sender) ? blockEntity : null;
     }

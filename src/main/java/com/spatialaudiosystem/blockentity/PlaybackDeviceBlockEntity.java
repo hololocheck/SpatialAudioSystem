@@ -32,7 +32,7 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 
-public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvider {
+public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvider, OwnedDevice {
     public static final int MEDIA_SLOT = 0;
     public static final int RANGE_SLOT = 1;
     public static final int SLOT_COUNT = 2;
@@ -111,37 +111,32 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     @Nullable
     @Override
     public AbstractContainerMenu createMenu(int containerId, Inventory playerInventory, Player player) {
-        if (ownerUUID == null && player != null) {
-            setOwner(player.getUUID(), player.getName().getString());
-        }
-        if (player != null && !canAccess(player)) return null;   // private device: owner only
+        if (!claimAndAllow(player)) return null;   // private device: owner only
         return new PlaybackDeviceMenu(containerId, playerInventory, this);
     }
 
+    @Override
     @org.jetbrains.annotations.Nullable
     public java.util.UUID getOwnerUUID() {
         return ownerUUID;
     }
 
+    @Override
     public void setOwner(java.util.UUID uuid, String name) {
         this.ownerUUID = uuid;
         this.ownerName = name;
         markUpdated();
     }
 
+    @Override
     public boolean isPrivateMode() {
         return privateMode;
     }
 
-    /** Flip public/private. Only the owner should reach this (guarded in the menu). */
+    @Override
     public void togglePrivateMode() {
         privateMode = !privateMode;
         markUpdated();
-    }
-
-    /** Public devices are open to all; private ones are owner-only. */
-    public boolean canAccess(Player player) {
-        return !privateMode || ownerUUID == null || ownerUUID.equals(player.getUUID());
     }
 
     /** setChanged + a block-update sync, mirroring the inline pattern used across this class. */
