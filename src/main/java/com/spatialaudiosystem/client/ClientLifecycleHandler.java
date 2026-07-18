@@ -25,6 +25,7 @@ public class ClientLifecycleHandler {
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         AudioManager.getInstance().stopAll();
         ClientAudioChunkPayload.clearAllSessions();
+        ClientArtCache.clear();
     }
 
     /** Client-side level (world) unloaded — covers dimension changes too, just in case. */
@@ -33,5 +34,6 @@ public class ClientLifecycleHandler {
         if (event.getLevel() == null || !event.getLevel().isClientSide()) return;
         AudioManager.getInstance().stopAll();
         ClientAudioChunkPayload.clearAllSessions();
+        ClientArtCache.clear();
     }
 }

@@ -28,8 +28,25 @@
   "gui.spatialaudiosystem.attenuation_range": "Attenuation Range: %d blocks",
   "gui.spatialaudiosystem.no_media": "No media",
   "gui.spatialaudiosystem.no_file_selected": "No file selected",
+  "gui.spatialaudiosystem.hint": "Hint",
+  "gui.spatialaudiosystem.duration_prefix": "Length: %s",
+  "gui.spatialaudiosystem.rec_error_no_medium": "Insert a recording medium first",
+  "gui.spatialaudiosystem.rec_error_no_file": "Select an audio file first",
+  "gui.spatialaudiosystem.rec_error_output_occupied": "Remove the finished medium first",
 
   "message.spatialaudiosystem.pos1_set": "Position 1 set: %d, %d, %d",
   "message.spatialaudiosystem.pos2_set": "Position 2 set: %d, %d, %d",
-  "message.spatialaudiosystem.range_cleared": "Range cleared"
+  "message.spatialaudiosystem.range_cleared": "Range cleared",
+
+  "hud.spatialaudiosystem.range_mode_normal": "Normal Range",
+  "hud.spatialaudiosystem.range_mode_attenuation": "Attenuation",
+  "hud.spatialaudiosystem.range_mode_downward": "Downward",
+  "hud.spatialaudiosystem.range_desc_normal": "Select two points to set the range",
+  "hud.spatialaudiosystem.range_atten_fmt": "%s: %d blocks",
+  "hud.spatialaudiosystem.range_dir_east": "East",
+  "hud.spatialaudiosystem.range_dir_west": "West",
+  "hud.spatialaudiosystem.range_dir_up": "Up",
+  "hud.spatialaudiosystem.range_dir_down": "Down",
+  "hud.spatialaudiosystem.range_dir_south": "South",
+  "hud.spatialaudiosystem.range_dir_north": "North"
 }

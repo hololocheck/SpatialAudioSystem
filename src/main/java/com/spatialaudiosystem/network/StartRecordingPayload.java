@@ -8,6 +8,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public record StartRecordingPayload(BlockPos pos) implements CustomPacketPayload {
@@ -30,8 +32,12 @@ public record StartRecordingPayload(BlockPos pos) implements CustomPacketPayload
         context.enqueueWork(() -> {
             RecordingDeviceBlockEntity recordingDevice =
                     ServerInteractionGuard.recordingDevice(context.player(), payload.pos);
-            if (recordingDevice != null) {
-                recordingDevice.startRecording();
+            if (recordingDevice == null) return;
+
+            int result = recordingDevice.startRecording();
+            if (result != RecordingDeviceBlockEntity.START_OK
+                    && context.player() instanceof ServerPlayer serverPlayer) {
+                PacketDistributor.sendToPlayer(serverPlayer, new RecordingErrorPayload(payload.pos, result));
             }
         });
     }

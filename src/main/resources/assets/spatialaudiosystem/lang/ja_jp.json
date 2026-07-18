@@ -28,8 +28,25 @@
   "gui.spatialaudiosystem.attenuation_range": "\u6e1b\u8870\u7bc4\u56f2: %d \u30d6\u30ed\u30c3\u30af",
   "gui.spatialaudiosystem.no_media": "\u30e1\u30c7\u30a3\u30a2\u306a\u3057",
   "gui.spatialaudiosystem.no_file_selected": "\u30d5\u30a1\u30a4\u30eb\u672a\u9078\u629e",
+  "gui.spatialaudiosystem.hint": "\u30d2\u30f3\u30c8",
+  "gui.spatialaudiosystem.duration_prefix": "\u9577\u3055: %s",
+  "gui.spatialaudiosystem.rec_error_no_medium": "\u8a18\u9332\u5a92\u4f53\u3092\u5165\u308c\u3066\u304f\u3060\u3055\u3044",
+  "gui.spatialaudiosystem.rec_error_no_file": "\u97f3\u58f0\u30d5\u30a1\u30a4\u30eb\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044",
+  "gui.spatialaudiosystem.rec_error_output_occupied": "\u5b8c\u6210\u54c1\u3092\u53d6\u308a\u51fa\u3057\u3066\u304f\u3060\u3055\u3044",
 
   "message.spatialaudiosystem.pos1_set": "\u5730\u70b91\u8a2d\u5b9a: %d, %d, %d",
   "message.spatialaudiosystem.pos2_set": "\u5730\u70b92\u8a2d\u5b9a: %d, %d, %d",
-  "message.spatialaudiosystem.range_cleared": "\u7bc4\u56f2\u3092\u89e3\u9664\u3057\u307e\u3057\u305f"
+  "message.spatialaudiosystem.range_cleared": "\u7bc4\u56f2\u3092\u89e3\u9664\u3057\u307e\u3057\u305f",
+
+  "hud.spatialaudiosystem.range_mode_normal": "\u901a\u5e38\u7bc4\u56f2\u6307\u5b9a",
+  "hud.spatialaudiosystem.range_mode_attenuation": "\u6e1b\u8870\u7387\u8a2d\u5b9a",
+  "hud.spatialaudiosystem.range_mode_downward": "\u4e0b\u5411\u304d\u8a2d\u5b9a",
+  "hud.spatialaudiosystem.range_desc_normal": "2\u70b9\u3092\u9078\u629e\u3057\u3066\u7bc4\u56f2\u3092\u8a2d\u5b9a",
+  "hud.spatialaudiosystem.range_atten_fmt": "%s: %d \u30d6\u30ed\u30c3\u30af",
+  "hud.spatialaudiosystem.range_dir_east": "\u6771",
+  "hud.spatialaudiosystem.range_dir_west": "\u897f",
+  "hud.spatialaudiosystem.range_dir_up": "\u4e0a",
+  "hud.spatialaudiosystem.range_dir_down": "\u4e0b",
+  "hud.spatialaudiosystem.range_dir_south": "\u5357",
+  "hud.spatialaudiosystem.range_dir_north": "\u5317"
 }

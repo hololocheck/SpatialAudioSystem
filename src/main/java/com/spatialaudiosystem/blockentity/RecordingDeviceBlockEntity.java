@@ -29,6 +29,12 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
     public static final int OUTPUT_SLOT = 1;
     public static final int SLOT_COUNT = 2;
 
+    /** {@link #startRecording()} outcome codes, sent to the client so it can explain a refusal. */
+    public static final int START_OK = 0;
+    public static final int START_NO_MEDIUM = 1;       // input slot empty
+    public static final int START_NO_FILE = 2;         // no audio picked/uploaded yet
+    public static final int START_OUTPUT_OCCUPIED = 3; // output slot still holds a result
+
     private final ItemStackHandler inventory = new ItemStackHandler(SLOT_COUNT) {
         @Override
         protected void onContentsChanged(int slot) {
@@ -52,6 +58,9 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
     private byte[] pendingAudioData = null;
     private String pendingFileName = null;
     private String pendingFormat = null;
+    private java.util.UUID ownerUUID = null;   // first player to open this device
+    private String ownerName = null;
+    private boolean privateMode = false;       // private = owner only (OwnerAccess ring red)
 
     public RecordingDeviceBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.RECORDING_DEVICE.get(), pos, state);
@@ -65,11 +74,49 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
     @Nullable
     @Override
     public AbstractContainerMenu createMenu(int containerId, Inventory playerInventory, Player player) {
+        if (ownerUUID == null && player != null) {
+            setOwner(player.getUUID(), player.getName().getString());
+        }
+        if (player != null && !canAccess(player)) return null;   // private device: owner only
         return new RecordingDeviceMenu(containerId, playerInventory, this);
     }
 
     public ItemStackHandler getInventory() {
         return inventory;
+    }
+
+    @Nullable
+    public java.util.UUID getOwnerUUID() {
+        return ownerUUID;
+    }
+
+    public void setOwner(java.util.UUID uuid, String name) {
+        this.ownerUUID = uuid;
+        this.ownerName = name;
+        setChanged();
+        syncToClients();
+    }
+
+    public boolean isPrivateMode() {
+        return privateMode;
+    }
+
+    /** Flip public/private. Only the owner should reach this (guarded in the menu). */
+    public void togglePrivateMode() {
+        privateMode = !privateMode;
+        setChanged();
+        syncToClients();
+    }
+
+    /** Public devices are open to all; private ones are owner-only. */
+    public boolean canAccess(Player player) {
+        return !privateMode || ownerUUID == null || ownerUUID.equals(player.getUUID());
+    }
+
+    private void syncToClients() {
+        if (level != null && !level.isClientSide()) {
+            level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
+        }
     }
 
     public int getRecordingProgress() {
@@ -92,6 +139,15 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
 
     public String getPendingFileName() {
         return pendingFileName;
+    }
+
+    public String getPendingFormat() {
+        return pendingFormat;
+    }
+
+    /** Server-side only: the uploaded-but-not-yet-written audio, or null. */
+    public byte[] getPendingAudioData() {
+        return pendingAudioData;
     }
 
     public void clearPendingAudio() {
@@ -123,15 +179,16 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         }
     }
 
-    public boolean startRecording() {
-        ItemStack inputStack = inventory.getStackInSlot(INPUT_SLOT);
-        if (inputStack.isEmpty() || pendingAudioData == null) return false;
-        if (!inventory.getStackInSlot(OUTPUT_SLOT).isEmpty()) return false;
+    /** Begins writing the pending audio onto the input medium, or returns why it cannot. */
+    public int startRecording() {
+        if (inventory.getStackInSlot(INPUT_SLOT).isEmpty()) return START_NO_MEDIUM;
+        if (pendingAudioData == null) return START_NO_FILE;
+        if (!inventory.getStackInSlot(OUTPUT_SLOT).isEmpty()) return START_OUTPUT_OCCUPIED;
 
         isRecording = true;
         recordingProgress = 0;
         setChanged();
-        return true;
+        return START_OK;
     }
 
     public void tickRecording() {
@@ -159,6 +216,12 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
                 recordingProgress = 0;
                 setChanged();
                 return;
+            }
+            // Extract embedded cover art (MP3 ID3v2) so the jacket is ready from the moment
+            // of writing; missing/unsupported art just leaves the placeholder.
+            byte[] art = com.spatialaudiosystem.audio.AudioArt.extract(pendingAudioData, pendingFormat);
+            if (art != null) {
+                AudioStorage.saveArt(level.getServer(), audioId, art);
             }
             ItemStack outputStack = inputStack.copy();
             outputStack.set(ModDataComponents.AUDIO_ID, audioId);
@@ -195,6 +258,11 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         tag.put("inventory", inventory.serializeNBT(registries));
         tag.putInt("recordingProgress", recordingProgress);
         tag.putBoolean("isRecording", isRecording);
+        if (ownerUUID != null) {
+            tag.putUUID("OwnerUUID", ownerUUID);
+            if (ownerName != null) tag.putString("OwnerName", ownerName);
+        }
+        tag.putBoolean("PrivateMode", privateMode);
     }
 
     @Override
@@ -203,6 +271,16 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         inventory.deserializeNBT(registries, tag.getCompound("inventory"));
         recordingProgress = tag.getInt("recordingProgress");
         isRecording = tag.getBoolean("isRecording");
+        if (tag.hasUUID("OwnerUUID")) {
+            ownerUUID = tag.getUUID("OwnerUUID");
+            ownerName = tag.contains("OwnerName") ? tag.getString("OwnerName") : null;
+        } else {
+            ownerUUID = null;
+        }
+        privateMode = tag.getBoolean("PrivateMode");
+        // Pending pick is transient (never saved); on the client this comes from the update tag.
+        pendingFileName = tag.contains("PendingFileName") ? tag.getString("PendingFileName") : null;
+        pendingFormat = tag.contains("PendingFormat") ? tag.getString("PendingFormat") : null;
         // Eager migration on load
         if (level != null && !level.isClientSide() && level.getServer() != null) {
             migrateInventory();
@@ -237,6 +315,12 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         CompoundTag tag = new CompoundTag();
         tag.putInt("recordingProgress", recordingProgress);
         tag.putBoolean("isRecording", isRecording);
+        if (ownerUUID != null) tag.putUUID("OwnerUUID", ownerUUID);   // client needs it for the owner face
+        tag.putBoolean("PrivateMode", privateMode);                   // client needs it for the ring colour
+        if (pendingAudioData != null && pendingFileName != null) {    // let the client show the pending pick
+            tag.putString("PendingFileName", pendingFileName);
+            if (pendingFormat != null) tag.putString("PendingFormat", pendingFormat);
+        }
         // Serialize inventory without AUDIO_DATA (too large for network NBT).
         ItemStackHandler liteInventory = new ItemStackHandler(SLOT_COUNT);
         for (int i = 0; i < SLOT_COUNT; i++) {

@@ -103,10 +103,49 @@ public class AudioStorage {
      */
     public static void delete(MinecraftServer server, UUID id) {
         try {
-            Path file = getStorageDir(server).resolve(id + ".audio");
-            Files.deleteIfExists(file);
+            Path dir = getStorageDir(server);
+            Files.deleteIfExists(dir.resolve(id + ".audio"));
+            Files.deleteIfExists(dir.resolve(id + ".art"));   // drop the cover art with its audio
         } catch (IOException e) {
             SpatialAudioSystem.LOGGER.error("Failed to delete audio {}", id, e);
+        }
+    }
+
+    /**
+     * Save cover art beside the audio under the same UUID ({@code <uuid>.art}). Best-effort:
+     * art is optional, so a failure only means the jacket falls back to the placeholder.
+     */
+    public static void saveArt(MinecraftServer server, UUID id, byte[] art) {
+        if (art == null || art.length == 0) return;
+        Path tmp = null;
+        try {
+            Path dir = getStorageDir(server);
+            Files.createDirectories(dir);
+            tmp = dir.resolve(id + ".art.tmp");
+            Files.write(tmp, art);
+            Files.move(tmp, dir.resolve(id + ".art"), StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            SpatialAudioSystem.LOGGER.warn("Failed to save cover art {}", id, e);
+            if (tmp != null) {
+                try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            }
+        }
+    }
+
+    /** Load cover art by UUID, or null if none was stored (checks the pre-rename directory too). */
+    @Nullable
+    public static byte[] loadArt(MinecraftServer server, UUID id) {
+        Path file = getStorageDir(server).resolve(id + ".art");
+        if (!Files.exists(file)) {
+            Path legacy = getLegacyStorageDir(server).resolve(id + ".art");
+            if (!Files.exists(legacy)) return null;
+            file = legacy;
+        }
+        try {
+            return Files.readAllBytes(file);
+        } catch (IOException e) {
+            SpatialAudioSystem.LOGGER.warn("Failed to load cover art {}", id, e);
+            return null;
         }
     }
 
@@ -176,6 +215,7 @@ public class AudioStorage {
                     BasicFileAttributes attrs = Files.readAttributes(file, BasicFileAttributes.class);
                     if (attrs.creationTime().toInstant().isBefore(cutoff)) {
                         Files.deleteIfExists(file);
+                        Files.deleteIfExists(dir.resolve(fileId + ".art"));   // its cover art too
                         deleted++;
                     }
                 } catch (IllegalArgumentException ignored) {

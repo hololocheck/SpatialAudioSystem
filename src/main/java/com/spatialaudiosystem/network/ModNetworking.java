@@ -34,6 +34,18 @@ public class ModNetworking {
         );
 
         registrar.playToServer(
+                TestPlayRecordingPayload.TYPE,
+                TestPlayRecordingPayload.STREAM_CODEC,
+                TestPlayRecordingPayload::handle
+        );
+
+        registrar.optional().playToServer(
+                RequestArtPayload.TYPE,
+                RequestArtPayload.STREAM_CODEC,
+                RequestArtPayload::handle
+        );
+
+        registrar.playToServer(
                 ToggleRangeDisplayPayload.TYPE,
                 ToggleRangeDisplayPayload.STREAM_CODEC,
                 ToggleRangeDisplayPayload::handle
@@ -98,6 +110,18 @@ public class ModNetworking {
                 ClientNotifyPayload.TYPE,
                 ClientNotifyPayload.STREAM_CODEC,
                 ClientNotifyPayload::handle
+        );
+
+        registrar.optional().playToClient(
+                RecordingErrorPayload.TYPE,
+                RecordingErrorPayload.STREAM_CODEC,
+                RecordingErrorPayload::handle
+        );
+
+        registrar.optional().playToClient(
+                ArtDataPayload.TYPE,
+                ArtDataPayload.STREAM_CODEC,
+                ArtDataPayload::handle
         );
     }
 }

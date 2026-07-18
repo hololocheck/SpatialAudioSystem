@@ -139,6 +139,18 @@ public class RecordingDeviceMenu extends AbstractContainerMenu {
         return stillValid(this.access, player, ModBlocks.RECORDING_DEVICE.get());
     }
 
+    @Override
+    public boolean clickMenuButton(Player player, int id) {
+        if (id == belugalab.tsu.api.OwnerAccess.TOGGLE_BUTTON) {
+            java.util.UUID owner = blockEntity.getOwnerUUID();
+            if (owner == null || owner.equals(player.getUUID())) {   // owner-only toggle
+                blockEntity.togglePrivateMode();
+            }
+            return true;
+        }
+        return super.clickMenuButton(player, id);
+    }
+
     private void addPlayerInventory(Inventory playerInventory) {
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 9; j++) {
