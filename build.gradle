@@ -59,9 +59,9 @@ dependencies {
     // Manta UI library. Compile against the readable jar for full signatures; ship the
     // obfuscated one embedded (jarJar), so a user running several BelugaLab mods loads a
     // single Manta - the newest that satisfies every mod's range.
-    compileOnly files("../manta/build/libs/manta-1.0.6.jar")
+    compileOnly files("../manta/build/libs/manta-1.0.7.jar")
     jarJar(implementation("com.manta:manta:[1.0.2,2)")) {
-        version { prefer "1.0.6" }
+        version { prefer "1.0.7" }
     }
 
     // Unit-test infrastructure. Mirrors the Manta repo's setup.
