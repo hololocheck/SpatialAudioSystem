@@ -35,3 +35,6 @@ create-*.jar
 
 # Root-level screenshots (already in screenshots/)
 /2026-*.png
+
+# Personal deploy helper (machine-specific path)
+/scripts/

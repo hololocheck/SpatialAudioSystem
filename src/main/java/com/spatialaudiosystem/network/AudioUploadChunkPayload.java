@@ -3,15 +3,16 @@ package com.spatialaudiosystem.network;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.audio.AudioStorage;
 import com.spatialaudiosystem.blockentity.RecordingDeviceBlockEntity;
+import com.spatialaudiosystem.server.ServerInteractionGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
+import java.util.BitSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -48,12 +49,38 @@ public record AudioUploadChunkPayload(int chunkIndex, byte[] data)
     /** Session timeout: 30 seconds. */
     private static final long SESSION_TIMEOUT_MS = 30_000;
 
-    static void startUpload(UUID playerId, BlockPos pos, String fileName, String format, int totalSize, int chunkCount) {
-        // Clean up any expired sessions first
+    /** Number of chunks a transfer of {@code totalSize} bytes must be split into. */
+    static int expectedChunkCount(int totalSize) {
+        return (totalSize + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    }
+
+    /**
+     * Opens a reassembly session, or returns false if the announced framing is not one
+     * this server would ever produce.
+     */
+    static boolean startUpload(UUID playerId, BlockPos pos, String fileName, String format, int totalSize, int chunkCount) {
+        if (totalSize <= 0 || totalSize > MAX_TOTAL_SIZE) return false;
+        if (chunkCount != expectedChunkCount(totalSize)) return false;
+
+        sweepExpired();
+        activeSessions.put(playerId, new UploadSession(pos, fileName, format, totalSize, chunkCount));
+        return true;
+    }
+
+    /** Drops sessions past their deadline. Called on upload start and from the server tick. */
+    public static void sweepExpired() {
         long now = System.currentTimeMillis();
         activeSessions.entrySet().removeIf(e -> now - e.getValue().createdAt > SESSION_TIMEOUT_MS);
+    }
 
-        activeSessions.put(playerId, new UploadSession(pos, fileName, format, totalSize, chunkCount));
+    /** Drops a disconnecting player's half-finished transfer. */
+    public static void cancelUpload(UUID playerId) {
+        activeSessions.remove(playerId);
+    }
+
+    /** Drops every in-flight transfer. The map is static, so it outlives a single world. */
+    public static void clearUploads() {
+        activeSessions.clear();
     }
 
     public static void handle(AudioUploadChunkPayload payload, IPayloadContext context) {
@@ -65,28 +92,30 @@ public record AudioUploadChunkPayload(int chunkIndex, byte[] data)
                 return;
             }
 
-            // Copy chunk data into the reassembly buffer
-            int offset = payload.chunkIndex * CHUNK_SIZE;
-            int len = Math.min(payload.data.length, session.buffer.length - offset);
-            if (len > 0) {
-                System.arraycopy(payload.data, 0, session.buffer, offset, len);
-            }
-            session.receivedChunks++;
-
-            // All chunks received — finalize
-            if (session.receivedChunks >= session.chunkCount) {
+            if (!session.accept(payload.chunkIndex, payload.data)) {
+                // Out of range, wrong length, or a repeat. Any of these means the bytes no
+                // longer describe the announced file, so the transfer cannot be finished.
                 activeSessions.remove(player.getUUID());
+                SpatialAudioSystem.LOGGER.warn(
+                        "Player {} sent an invalid audio chunk ({} bytes at index {}); upload dropped",
+                        player.getName().getString(), payload.data.length, payload.chunkIndex);
+                player.sendSystemMessage(Component.literal("§cAudio upload failed. Please try again."));
+                return;
+            }
 
-                String sizeError = AudioStorage.validateSize(session.buffer);
-                if (sizeError != null) {
-                    player.sendSystemMessage(Component.literal("\u00a7c" + sizeError));
-                    return;
-                }
+            if (!session.isComplete()) return;
+            activeSessions.remove(player.getUUID());
 
-                BlockEntity entity = player.level().getBlockEntity(session.pos);
-                if (entity instanceof RecordingDeviceBlockEntity recordingDevice) {
-                    recordingDevice.setPendingAudio(session.buffer, session.fileName, session.format);
-                }
+            String sizeError = AudioStorage.validateSize(session.buffer);
+            if (sizeError != null) {
+                player.sendSystemMessage(Component.literal("§c" + sizeError));
+                return;
+            }
+
+            RecordingDeviceBlockEntity recordingDevice =
+                    ServerInteractionGuard.recordingDevice(player, session.pos);
+            if (recordingDevice != null) {
+                recordingDevice.setPendingAudio(session.buffer, session.fileName, session.format);
             }
         });
     }
@@ -102,7 +131,9 @@ public record AudioUploadChunkPayload(int chunkIndex, byte[] data)
         final String format;
         final byte[] buffer;
         final int chunkCount;
-        int receivedChunks;
+        /** Which indices have arrived. Counting receipts instead would let a repeated
+         *  chunk complete a transfer whose gaps are still zero-filled. */
+        final BitSet received;
 
         final long createdAt;
 
@@ -112,8 +143,28 @@ public record AudioUploadChunkPayload(int chunkIndex, byte[] data)
             this.format = format;
             this.buffer = new byte[totalSize];
             this.chunkCount = chunkCount;
-            this.receivedChunks = 0;
+            this.received = new BitSet(chunkCount);
             this.createdAt = System.currentTimeMillis();
+        }
+
+        /** Length the chunk at {@code index} must have for this transfer. */
+        private int expectedLength(int index) {
+            return Math.min(CHUNK_SIZE, buffer.length - index * CHUNK_SIZE);
+        }
+
+        /** Stores a chunk, or returns false if it does not fit the announced transfer. */
+        boolean accept(int index, byte[] data) {
+            if (index < 0 || index >= chunkCount) return false;
+            if (received.get(index)) return false;
+            if (data.length != expectedLength(index)) return false;
+
+            System.arraycopy(data, 0, buffer, index * CHUNK_SIZE, data.length);
+            received.set(index);
+            return true;
+        }
+
+        boolean isComplete() {
+            return received.cardinality() == chunkCount;
         }
     }
 }

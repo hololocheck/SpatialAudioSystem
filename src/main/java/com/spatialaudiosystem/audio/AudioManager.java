@@ -23,10 +23,21 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class AudioManager {
     private static final AudioManager INSTANCE = new AudioManager();
-    private final Map<BlockPos, AudioPlayback> activePlaybacks = new ConcurrentHashMap<>();
-    private final java.util.Set<BlockPos> pendingPlaybacks = ConcurrentHashMap.newKeySet();
-    /** Positions where playback finished naturally (audio thread adds, render thread drains & sends stop). */
-    private final java.util.Set<BlockPos> finishedPlaybacks = ConcurrentHashMap.newKeySet();
+    /**
+     * The sound occupying each position, from the moment it is asked for until its worker
+     * exits. A session exists before the decoder does, so a stop arriving while the file
+     * is still being opened has something to mark; previously the stop looked for a
+     * playback that had not been published yet, found nothing, and the sound started anyway.
+     */
+    private final Map<BlockPos, PlaybackSession> sessions = new ConcurrentHashMap<>();
+    /** Playbacks that finished naturally (audio thread adds, render thread drains & reports). */
+    private final java.util.Set<FinishedPlayback> finishedPlaybacks = ConcurrentHashMap.newKeySet();
+
+    /** Passed to {@link #stopAudio} to mean "whatever is playing here". */
+    public static final long ANY_PLAYBACK = 0L;
+
+    /** A finished sound: the place it played and which sound it was. */
+    public record FinishedPlayback(BlockPos pos, long playbackId) {}
 
     // Local player position updated from the main thread every frame.
     // The audio thread reads these volatile fields to avoid calling level.getNearestPlayer()
@@ -45,14 +56,15 @@ public class AudioManager {
      * Called every render frame from the main thread to update gain for all active playbacks.
      * Also drains finished playbacks and returns their positions so the caller can notify the server.
      */
-    public static List<BlockPos> tickGain() {
+    public static List<FinishedPlayback> tickGain() {
         if (!localPlayerPosValid) return List.of();
-        for (AudioPlayback playback : INSTANCE.activePlaybacks.values()) {
-            INSTANCE.updateVolumeForPlayers(playback);
+        for (PlaybackSession session : INSTANCE.sessions.values()) {
+            AudioPlayback playback = session.playback();
+            if (playback != null) INSTANCE.updateVolumeForPlayers(playback);
         }
         // Drain finished playbacks (audio thread adds, render thread drains)
         if (INSTANCE.finishedPlaybacks.isEmpty()) return List.of();
-        List<BlockPos> finished = new ArrayList<>(INSTANCE.finishedPlaybacks);
+        List<FinishedPlayback> finished = new ArrayList<>(INSTANCE.finishedPlaybacks);
         INSTANCE.finishedPlaybacks.clear();
         return finished;
     }
@@ -64,94 +76,123 @@ public class AudioManager {
     /**
      * attenuationRanges: int[6] = [East(+X), West(-X), Up(+Y), Down(-Y), South(+Z), North(-Z)]
      */
-    public void playAudio(Level level, BlockPos pos, byte[] audioData, String format,
+    public void playAudio(Level level, BlockPos pos, long playbackId, byte[] audioData, String format,
                           BlockPos rangePos1, BlockPos rangePos2, boolean attenuationMode, int[] attenuationRanges) {
-        stopAudio(pos);
+        PlaybackSession session = new PlaybackSession(
+                pos, playbackId, rangePos1, rangePos2, attenuationMode, attenuationRanges);
 
-        // Mark as pending BEFORE starting the thread so isPlaying() returns true immediately
-        pendingPlaybacks.add(pos);
-
-        final int[] ranges = Arrays.copyOf(attenuationRanges, 6);
+        // Published before the worker exists, so a stop in the next millisecond has
+        // something to cancel rather than racing an unpublished playback.
+        PlaybackSession previous = sessions.put(pos, session);
+        if (previous != null) previous.cancel();
 
         Thread playThread = new Thread(() -> {
-            AudioPlayback thisPlayback = null;
             try {
-                if ("mp3".equalsIgnoreCase(format)) {
-                    thisPlayback = streamMp3(level, pos, audioData, rangePos1, rangePos2, attenuationMode, ranges);
-                } else if ("ogg".equalsIgnoreCase(format)) {
-                    thisPlayback = streamOgg(level, pos, audioData, rangePos1, rangePos2, attenuationMode, ranges);
-                } else if ("wav".equalsIgnoreCase(format)) {
-                    thisPlayback = streamWav(level, pos, audioData, rangePos1, rangePos2, attenuationMode, ranges);
-                } else {
-                    SpatialAudioSystem.LOGGER.error("Unsupported audio format: {}", format);
-                }
+                decodeAndPlay(session, level, audioData, format);
             } catch (Exception e) {
                 SpatialAudioSystem.LOGGER.error("Failed to play audio at {}", pos, e);
             } finally {
-                pendingPlaybacks.remove(pos);
-                if (thisPlayback != null) {
-                    activePlaybacks.remove(pos, thisPlayback);
-                } else {
-                    activePlaybacks.remove(pos);
-                }
-                // Signal that playback ended so render thread can notify the server
-                finishedPlaybacks.add(pos);
+                sessions.remove(pos, session);
+                // Report whichever sound this was. The server decides whether it is still
+                // the one playing there.
+                finishedPlaybacks.add(new FinishedPlayback(pos, playbackId));
             }
         }, "SSS-Audio-" + pos.toShortString());
         playThread.setDaemon(true);
         playThread.start();
     }
 
-    private AudioPlayback streamMp3(Level level, BlockPos pos, byte[] audioData,
-                                     BlockPos rangePos1, BlockPos rangePos2,
-                                     boolean attenuationMode, int[] attenuationRanges) throws Exception {
+    private void decodeAndPlay(PlaybackSession session, Level level, byte[] audioData, String format)
+            throws Exception {
+        if ("mp3".equalsIgnoreCase(format)) {
+            streamMp3(session, level, audioData);
+        } else if ("ogg".equalsIgnoreCase(format)) {
+            streamOgg(session, level, audioData);
+        } else if ("wav".equalsIgnoreCase(format)) {
+            streamWav(session, level, audioData);
+        } else {
+            SpatialAudioSystem.LOGGER.error("Unsupported audio format: {}", format);
+        }
+    }
+
+    /** The part of playback that writes decoded PCM to an open line. */
+    private interface PcmWriter {
+        void write(SourceDataLine line, AudioPlayback playback) throws Exception;
+    }
+
+    /**
+     * Opens a line for {@code format}, runs {@code writer} against it, and closes it
+     * whatever happens. Every decoder shares this so the line cannot outlive a failure
+     * in one of them.
+     */
+    private void runOnLine(PlaybackSession session, AudioFormat format, PcmWriter writer) throws Exception {
+        if (session.isCancelled()) return;
+
+        DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+        SourceDataLine line = (SourceDataLine) AudioSystem.getLine(info);
+        line.open(format);
+        try {
+            FloatControl volumeControl = line.isControlSupported(FloatControl.Type.MASTER_GAIN)
+                    ? (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN)
+                    : null;
+
+            AudioPlayback playback = new AudioPlayback(line, session.pos, session.rangePos1, session.rangePos2,
+                    volumeControl, session.attenuationMode, session.attenuationRanges);
+            session.attach(playback);
+            // A stop that arrived while the file was being decoded lands on the session,
+            // and attach hands it straight to the playback.
+            if (playback.isStopped()) return;
+
+            updateVolumeForPlayers(playback);
+            line.start();
+
+            writer.write(line, playback);
+
+            if (!playback.isStopped()) line.drain();
+        } finally {
+            try {
+                line.stop();
+                line.close();
+            } catch (Exception ignored) {
+                // Already closed by AudioPlayback.stop(); nothing left to release.
+            }
+        }
+    }
+
+    private void streamMp3(PlaybackSession session, Level level, byte[] audioData) throws Exception {
         ByteArrayInputStream bais = new ByteArrayInputStream(audioData);
         Bitstream bitstream = new Bitstream(bais);
         Decoder decoder = new Decoder();
+        try {
+            Header firstHeader = bitstream.readFrame();
+            if (firstHeader == null) {
+                SpatialAudioSystem.LOGGER.error("MP3 file has no frames at {}", session.pos);
+                return;
+            }
 
-        Header firstHeader = bitstream.readFrame();
-        if (firstHeader == null) {
-            SpatialAudioSystem.LOGGER.error("MP3 file has no frames at {}", pos);
-            bitstream.close();
-            return null;
-        }
-
-        SampleBuffer firstOutput = (SampleBuffer) decoder.decodeFrame(firstHeader, bitstream);
-        AudioFormat audioFormat = new AudioFormat(
-                decoder.getOutputFrequency(), 16, decoder.getOutputChannels(), true, false);
-        bitstream.closeFrame();
-
-        DataLine.Info info = new DataLine.Info(SourceDataLine.class, audioFormat);
-        SourceDataLine line = (SourceDataLine) AudioSystem.getLine(info);
-        line.open(audioFormat);
-
-        FloatControl volumeControl = null;
-        if (line.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
-            volumeControl = (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN);
-        }
-
-        AudioPlayback playback = new AudioPlayback(line, pos, rangePos1, rangePos2,
-                volumeControl, attenuationMode, attenuationRanges);
-        activePlaybacks.put(pos, playback);
-
-        updateVolumeForPlayers(playback);
-        line.start();
-
-        writeFrameToLine(firstOutput, line, playback, level);
-
-        Header header;
-        while ((header = bitstream.readFrame()) != null) {
-            if (playback.isStopped()) break;
-            SampleBuffer output = (SampleBuffer) decoder.decodeFrame(header, bitstream);
-            writeFrameToLine(output, line, playback, level);
+            SampleBuffer firstOutput = (SampleBuffer) decoder.decodeFrame(firstHeader, bitstream);
+            AudioFormat audioFormat = new AudioFormat(
+                    decoder.getOutputFrequency(), 16, decoder.getOutputChannels(), true, false);
             bitstream.closeFrame();
-        }
 
-        bitstream.close();
-        if (!playback.isStopped()) line.drain();
-        line.stop();
-        line.close();
-        return playback;
+            runOnLine(session, audioFormat, (line, playback) -> {
+                writeFrameToLine(firstOutput, line, playback, level);
+
+                Header header;
+                while ((header = bitstream.readFrame()) != null) {
+                    if (playback.isStopped()) break;
+                    SampleBuffer output = (SampleBuffer) decoder.decodeFrame(header, bitstream);
+                    writeFrameToLine(output, line, playback, level);
+                    bitstream.closeFrame();
+                }
+            });
+        } finally {
+            try {
+                bitstream.close();
+            } catch (Exception ignored) {
+                // Decoding already failed; the stream is in-memory and holds no OS handle.
+            }
+        }
     }
 
     private void writeFrameToLine(SampleBuffer output, SourceDataLine line,
@@ -168,9 +209,7 @@ public class AudioManager {
         line.write(bytes, 0, len * 2);
     }
 
-    private AudioPlayback streamOgg(Level level, BlockPos pos, byte[] audioData,
-                                     BlockPos rangePos1, BlockPos rangePos2,
-                                     boolean attenuationMode, int[] attenuationRanges) throws Exception {
+    private void streamOgg(PlaybackSession session, Level level, byte[] audioData) throws Exception {
         ByteBuffer buf = MemoryUtil.memAlloc(audioData.length);
         buf.put(audioData).flip();
 
@@ -181,7 +220,7 @@ public class AudioManager {
                 vorbis = STBVorbis.stb_vorbis_open_memory(buf, errorBuffer, null);
                 if (vorbis == 0) {
                     SpatialAudioSystem.LOGGER.error("Failed to open OGG, error: {}", errorBuffer.get(0));
-                    return null;
+                    return;
                 }
             }
 
@@ -191,117 +230,79 @@ public class AudioManager {
             vorbisInfo.free();
 
             AudioFormat audioFormat = new AudioFormat(sampleRate, 16, channels, true, false);
-            DataLine.Info info = new DataLine.Info(SourceDataLine.class, audioFormat);
-            SourceDataLine line = (SourceDataLine) AudioSystem.getLine(info);
-            line.open(audioFormat);
+            final long vorbisHandle = vorbis;
 
-            FloatControl volumeControl = null;
-            if (line.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
-                volumeControl = (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN);
-            }
+            runOnLine(session, audioFormat, (line, playback) -> {
+                int chunkSamples = 4096;
+                ShortBuffer pcmBuffer = MemoryUtil.memAllocShort(chunkSamples * channels);
+                byte[] writeBuffer = new byte[chunkSamples * channels * 2];
+                try {
+                    while (!playback.isStopped()) {
+                        pcmBuffer.clear();
+                        int samplesRead = STBVorbis.stb_vorbis_get_samples_short_interleaved(
+                                vorbisHandle, channels, pcmBuffer);
+                        if (samplesRead == 0) break;
 
-            AudioPlayback playback = new AudioPlayback(line, pos, rangePos1, rangePos2,
-                    volumeControl, attenuationMode, attenuationRanges);
-            activePlaybacks.put(pos, playback);
-
-            updateVolumeForPlayers(playback);
-            line.start();
-
-            int chunkSamples = 4096;
-            ShortBuffer pcmBuffer = MemoryUtil.memAllocShort(chunkSamples * channels);
-            byte[] writeBuffer = new byte[chunkSamples * channels * 2];
-
-            try {
-                while (!playback.isStopped()) {
-                    pcmBuffer.clear();
-                    int samplesRead = STBVorbis.stb_vorbis_get_samples_short_interleaved(
-                            vorbis, channels, pcmBuffer);
-                    if (samplesRead == 0) break;
-
-                    int totalShorts = samplesRead * channels;
-                    float gain = playback.getSoftwareGain();
-                    for (int i = 0; i < totalShorts; i++) {
-                        short s = pcmBuffer.get(i);
-                        if (gain < 0.999f) s = (short) (s * gain);
-                        writeBuffer[i * 2] = (byte) (s & 0xFF);
-                        writeBuffer[i * 2 + 1] = (byte) ((s >> 8) & 0xFF);
+                        int totalShorts = samplesRead * channels;
+                        float gain = playback.getSoftwareGain();
+                        for (int i = 0; i < totalShorts; i++) {
+                            short sample = pcmBuffer.get(i);
+                            if (gain < 0.999f) sample = (short) (sample * gain);
+                            writeBuffer[i * 2] = (byte) (sample & 0xFF);
+                            writeBuffer[i * 2 + 1] = (byte) ((sample >> 8) & 0xFF);
+                        }
+                        line.write(writeBuffer, 0, totalShorts * 2);
                     }
-                    line.write(writeBuffer, 0, totalShorts * 2);
+                } finally {
+                    MemoryUtil.memFree(pcmBuffer);
                 }
-            } finally {
-                MemoryUtil.memFree(pcmBuffer);
-            }
-
-            if (!playback.isStopped()) line.drain();
-            line.stop();
-            line.close();
-            return playback;
-
+            });
         } finally {
             if (vorbis != 0) STBVorbis.stb_vorbis_close(vorbis);
             MemoryUtil.memFree(buf);
         }
     }
 
-    private AudioPlayback streamWav(Level level, BlockPos pos, byte[] audioData,
-                                     BlockPos rangePos1, BlockPos rangePos2,
-                                     boolean attenuationMode, int[] attenuationRanges) throws Exception {
+    private void streamWav(PlaybackSession session, Level level, byte[] audioData) throws Exception {
         ByteArrayInputStream bais = new ByteArrayInputStream(audioData);
         BufferedInputStream bis = new BufferedInputStream(bais);
-        AudioInputStream audioStream = AudioSystem.getAudioInputStream(bis);
 
-        AudioFormat baseFormat = audioStream.getFormat();
-        AudioFormat pcmFormat = new AudioFormat(
-                AudioFormat.Encoding.PCM_SIGNED,
-                baseFormat.getSampleRate(), 16,
-                baseFormat.getChannels(), baseFormat.getChannels() * 2,
-                baseFormat.getSampleRate(), false);
+        try (AudioInputStream audioStream = AudioSystem.getAudioInputStream(bis)) {
+            AudioFormat baseFormat = audioStream.getFormat();
+            AudioFormat pcmFormat = new AudioFormat(
+                    AudioFormat.Encoding.PCM_SIGNED,
+                    baseFormat.getSampleRate(), 16,
+                    baseFormat.getChannels(), baseFormat.getChannels() * 2,
+                    baseFormat.getSampleRate(), false);
 
-        AudioInputStream pcmStream;
-        if (baseFormat.getEncoding() == AudioFormat.Encoding.PCM_SIGNED && baseFormat.getSampleSizeInBits() == 16) {
-            pcmStream = audioStream;
-        } else {
-            pcmStream = AudioSystem.getAudioInputStream(pcmFormat, audioStream);
-        }
-
-        DataLine.Info info = new DataLine.Info(SourceDataLine.class, pcmFormat);
-        SourceDataLine line = (SourceDataLine) AudioSystem.getLine(info);
-        line.open(pcmFormat);
-
-        FloatControl volumeControl = null;
-        if (line.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
-            volumeControl = (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN);
-        }
-
-        AudioPlayback playback = new AudioPlayback(line, pos, rangePos1, rangePos2,
-                volumeControl, attenuationMode, attenuationRanges);
-        activePlaybacks.put(pos, playback);
-
-        updateVolumeForPlayers(playback);
-        line.start();
-
-        byte[] buffer = new byte[4096];
-        int bytesRead;
-        while ((bytesRead = pcmStream.read(buffer)) != -1) {
-            if (playback.isStopped()) break;
-            float gain = playback.getSoftwareGain();
-            if (gain < 0.999f) {
-                for (int j = 0; j + 1 < bytesRead; j += 2) {
-                    short s = (short) ((buffer[j] & 0xFF) | (buffer[j + 1] << 8));
-                    s = (short) (s * gain);
-                    buffer[j] = (byte) (s & 0xFF);
-                    buffer[j + 1] = (byte) ((s >> 8) & 0xFF);
-                }
+            boolean alreadyPcm = baseFormat.getEncoding() == AudioFormat.Encoding.PCM_SIGNED
+                    && baseFormat.getSampleSizeInBits() == 16;
+            AudioInputStream pcmStream = alreadyPcm
+                    ? audioStream
+                    : AudioSystem.getAudioInputStream(pcmFormat, audioStream);
+            try {
+                runOnLine(session, pcmFormat, (line, playback) -> {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = pcmStream.read(buffer)) != -1) {
+                        if (playback.isStopped()) break;
+                        float gain = playback.getSoftwareGain();
+                        if (gain < 0.999f) {
+                            for (int j = 0; j + 1 < bytesRead; j += 2) {
+                                short sample = (short) ((buffer[j] & 0xFF) | (buffer[j + 1] << 8));
+                                sample = (short) (sample * gain);
+                                buffer[j] = (byte) (sample & 0xFF);
+                                buffer[j + 1] = (byte) ((sample >> 8) & 0xFF);
+                            }
+                        }
+                        line.write(buffer, 0, bytesRead);
+                    }
+                });
+            } finally {
+                // Only close the converting stream; the try-with-resources owns the source.
+                if (pcmStream != audioStream) pcmStream.close();
             }
-            line.write(buffer, 0, bytesRead);
         }
-
-        if (!playback.isStopped()) line.drain();
-        line.stop();
-        line.close();
-        pcmStream.close();
-        audioStream.close();
-        return playback;
     }
 
     private void updateVolumeForPlayers(AudioPlayback playback) {
@@ -376,23 +377,81 @@ public class AudioManager {
         return 1.0;
     }
 
-    public void stopAudio(BlockPos pos) {
-        pendingPlaybacks.remove(pos);
-        AudioPlayback playback = activePlaybacks.remove(pos);
-        if (playback != null) playback.stop();
+    /**
+     * Stops the sound at {@code pos}.
+     *
+     * @param playbackId the sound to stop, or {@link #ANY_PLAYBACK} for whatever is there.
+     *                   A stop naming a playback that has already been replaced is ignored.
+     */
+    public void stopAudio(BlockPos pos, long playbackId) {
+        PlaybackSession session = sessions.get(pos);
+        if (session == null) return;
+        if (playbackId != ANY_PLAYBACK && session.playbackId != playbackId) return;
+
+        sessions.remove(pos, session);
+        session.cancel();
     }
 
     public boolean isPlaying(BlockPos pos) {
-        return activePlaybacks.containsKey(pos) || pendingPlaybacks.contains(pos);
+        return sessions.containsKey(pos);
     }
 
     public void stopAll() {
-        pendingPlaybacks.clear();
-        for (AudioPlayback playback : activePlaybacks.values()) playback.stop();
-        activePlaybacks.clear();
+        for (PlaybackSession session : sessions.values()) session.cancel();
+        sessions.clear();
+        finishedPlaybacks.clear();
     }
 
-    private static class AudioPlayback {
+    /**
+     * One sound at one position, owned by the manager rather than by the worker thread.
+     *
+     * <p>Cancellation has to be observable before the line exists: the file may still be
+     * decoding when the stop arrives. {@link #attach} closes that window from the other
+     * side, so a stop is honoured whichever order the two happen in.
+     */
+    static final class PlaybackSession {
+        final BlockPos pos;
+        final long playbackId;
+        final BlockPos rangePos1;
+        final BlockPos rangePos2;
+        final boolean attenuationMode;
+        final int[] attenuationRanges;
+
+        private volatile boolean cancelled;
+        private volatile AudioPlayback playback;
+
+        PlaybackSession(BlockPos pos, long playbackId, BlockPos rangePos1, BlockPos rangePos2,
+                        boolean attenuationMode, int[] attenuationRanges) {
+            this.pos = pos;
+            this.playbackId = playbackId;
+            this.rangePos1 = rangePos1;
+            this.rangePos2 = rangePos2;
+            this.attenuationMode = attenuationMode;
+            this.attenuationRanges = Arrays.copyOf(attenuationRanges, 6);
+        }
+
+        boolean isCancelled() {
+            return cancelled;
+        }
+
+        AudioPlayback playback() {
+            return playback;
+        }
+
+        /** Publishes the line's playback, or stops it at once if the stop got here first. */
+        void attach(AudioPlayback opened) {
+            playback = opened;
+            if (cancelled) opened.stop();
+        }
+
+        void cancel() {
+            cancelled = true;
+            AudioPlayback current = playback;
+            if (current != null) current.stop();
+        }
+    }
+
+    static class AudioPlayback {
         private final SourceDataLine line;
         private final BlockPos pos;
         private final BlockPos rangePos1;

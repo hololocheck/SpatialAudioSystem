@@ -1,5 +1,6 @@
 package com.spatialaudiosystem.blockentity;
 
+import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.audio.AudioStorage;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
@@ -109,11 +110,9 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
                     || stack.has(ModDataComponents.AUDIO_FILE_NAME)
                     || stack.has(ModDataComponents.AUDIO_FORMAT)
                     || stack.has(ModDataComponents.AUDIO_ID))) {
-                // Delete the audio file if it exists
-                java.util.UUID audioId = stack.get(ModDataComponents.AUDIO_ID);
-                if (audioId != null && level != null && level.getServer() != null) {
-                    AudioStorage.delete(level.getServer(), audioId);
-                }
+                // Only the medium's own reference is dropped. The file stays: the same
+                // audio id can sit on any number of copied stacks, and this device cannot
+                // see the others.
                 ItemStack cleaned = stack.copy();
                 cleaned.remove(ModDataComponents.AUDIO_ID);
                 cleaned.remove(ModDataComponents.AUDIO_DATA);
@@ -148,9 +147,20 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
     private void finishRecording() {
         ItemStack inputStack = inventory.getStackInSlot(INPUT_SLOT);
         if (!inputStack.isEmpty() && pendingAudioData != null && level != null && level.getServer() != null) {
-            ItemStack outputStack = inputStack.copy();
             // Save audio to server-side file instead of ItemStack component
             java.util.UUID audioId = AudioStorage.save(level.getServer(), pendingAudioData);
+            if (audioId == null) {
+                // The write failed. Keep the input medium and the pending bytes so the
+                // operator can retry; consuming them here would destroy the only copy
+                // and hand back a medium that cannot play.
+                SpatialAudioSystem.LOGGER.error(
+                        "Recording write failed at {}; input and pending audio kept for retry", worldPosition);
+                isRecording = false;
+                recordingProgress = 0;
+                setChanged();
+                return;
+            }
+            ItemStack outputStack = inputStack.copy();
             outputStack.set(ModDataComponents.AUDIO_ID, audioId);
             outputStack.remove(ModDataComponents.AUDIO_DATA); // ensure no legacy data
             outputStack.set(ModDataComponents.AUDIO_FILE_NAME, pendingFileName);

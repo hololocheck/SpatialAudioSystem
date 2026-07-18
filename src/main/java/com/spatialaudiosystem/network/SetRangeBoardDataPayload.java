@@ -3,6 +3,7 @@ package com.spatialaudiosystem.network;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
+import io.netty.handler.codec.DecoderException;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -29,9 +30,16 @@ public record SetRangeBoardDataPayload(InteractionHand hand, List<Integer> range
         for (int v : payload.ranges) buf.writeInt(v);
     }
 
+    /** One value per face. The handler rejects any other length; decoding must not
+     *  size an allocation from the wire before that check runs. */
+    private static final int RANGE_COUNT = 6;
+
     private static SetRangeBoardDataPayload read(FriendlyByteBuf buf) {
         InteractionHand hand = buf.readBoolean() ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
         int size = buf.readInt();
+        if (size < 0 || size > RANGE_COUNT) {
+            throw new DecoderException("Invalid range count: " + size);
+        }
         List<Integer> ranges = new ArrayList<>(size);
         for (int i = 0; i < size; i++) ranges.add(buf.readInt());
         return new SetRangeBoardDataPayload(hand, ranges);

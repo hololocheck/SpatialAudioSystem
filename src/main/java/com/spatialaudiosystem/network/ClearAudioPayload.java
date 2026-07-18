@@ -2,12 +2,12 @@ package com.spatialaudiosystem.network;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.blockentity.RecordingDeviceBlockEntity;
+import com.spatialaudiosystem.server.ServerInteractionGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public record ClearAudioPayload(BlockPos pos) implements CustomPacketPayload {
@@ -28,9 +28,9 @@ public record ClearAudioPayload(BlockPos pos) implements CustomPacketPayload {
 
     public static void handle(ClearAudioPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
-            var player = context.player();
-            BlockEntity entity = player.level().getBlockEntity(payload.pos);
-            if (entity instanceof RecordingDeviceBlockEntity recordingDevice) {
+            RecordingDeviceBlockEntity recordingDevice =
+                    ServerInteractionGuard.recordingDevice(context.player(), payload.pos);
+            if (recordingDevice != null) {
                 recordingDevice.clearPendingAudio();
                 recordingDevice.clearMediaAudioData();
             }

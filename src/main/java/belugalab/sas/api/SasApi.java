@@ -2,6 +2,7 @@ package belugalab.sas.api;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.audio.AudioStorage;
+import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.item.RangeBoardItem;
@@ -183,12 +184,16 @@ public final class SasApi {
         }
         int[] attRanges = getAttenuationRanges(rangeBoard);
 
+        long playbackId = PlaybackSessionRegistry.begin(level, pos);
         ClientPlayAudioPayload meta = new ClientPlayAudioPayload(
-                pos, audioData.length, format, rangePos1, rangePos2, attenuationMode, attRanges);
+                pos, playbackId, audioData.length, format, rangePos1, rangePos2, attenuationMode, attRanges);
 
-        for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+        // Only this level's players. A sound at (x,y,z) in the Nether is not the same
+        // sound as (x,y,z) in the Overworld, and shipping the audio to everyone meant a
+        // 10 MB transfer per player who could never hear it.
+        for (ServerPlayer sp : level.players()) {
             PacketDistributor.sendToPlayer(sp, meta);
-            ClientAudioChunkPayload.sendChunked(sp, pos, audioData);
+            ClientAudioChunkPayload.sendChunked(sp, pos, playbackId, audioData);
         }
         SpatialAudioSystem.LOGGER.debug("[SasApi] playAudio pos={} size={}B format={}",
                 pos, audioData.length, format);
@@ -198,10 +203,10 @@ public final class SasApi {
     /** Stop a playback at the given position. Tells all clients to stop. */
     public static void stopAudio(ServerLevel level, BlockPos pos) {
         if (level == null || pos == null) return;
-        MinecraftServer server = level.getServer();
-        if (server == null) return;
-        ClientStopAudioPayload payload = new ClientStopAudioPayload(pos);
-        for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+        ClientStopAudioPayload payload =
+                new ClientStopAudioPayload(pos, PlaybackSessionRegistry.currentId(level, pos));
+        PlaybackSessionRegistry.end(level, pos);
+        for (ServerPlayer sp : level.players()) {
             PacketDistributor.sendToPlayer(sp, payload);
         }
     }

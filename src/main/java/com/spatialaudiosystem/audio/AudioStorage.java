@@ -14,13 +14,13 @@ import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Server-side file-based audio storage.
@@ -30,25 +30,49 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AudioStorage {
 
     private static final String STORAGE_DIR = "spatialaudiosystem_audio";
+    /** Where 1.0.3 and earlier kept their recordings, under the pre-rename mod id. */
+    private static final String LEGACY_STORAGE_DIR = "stationsoundsystem_audio";
 
     private static Path getStorageDir(MinecraftServer server) {
         return server.getWorldPath(LevelResource.ROOT).resolve(STORAGE_DIR);
     }
 
+    private static Path getLegacyStorageDir(MinecraftServer server) {
+        return server.getWorldPath(LevelResource.ROOT).resolve(LEGACY_STORAGE_DIR);
+    }
+
     /**
      * Save audio data to a new file and return the generated UUID.
+     *
+     * <p>Returns null if the audio was not durably written. Callers must not put the
+     * id on an item or drop their copy of the bytes until they have a non-null id:
+     * an id whose file is missing reads as a medium that has audio but cannot play it.
      */
+    @Nullable
     public static UUID save(MinecraftServer server, byte[] audioData) {
         UUID id = UUID.randomUUID();
+        Path tmp = null;
         try {
             Path dir = getStorageDir(server);
             Files.createDirectories(dir);
-            Files.write(dir.resolve(id + ".audio"), audioData);
-            trackId(id);
+            // Write beside the target and swap it in, so an interrupted write cannot
+            // leave a truncated file that later loads as valid audio.
+            tmp = dir.resolve(id + ".audio.tmp");
+            Files.write(tmp, audioData);
+            Files.move(tmp, dir.resolve(id + ".audio"), StandardCopyOption.ATOMIC_MOVE);
+            trackId(server, id);
+            return id;
         } catch (IOException e) {
             SpatialAudioSystem.LOGGER.error("Failed to save audio {}", id, e);
+            if (tmp != null) {
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (IOException cleanupFailure) {
+                    SpatialAudioSystem.LOGGER.warn("Failed to remove temp file {}", tmp, cleanupFailure);
+                }
+            }
+            return null;
         }
-        return id;
     }
 
     /**
@@ -57,8 +81,15 @@ public class AudioStorage {
     @Nullable
     public static byte[] load(MinecraftServer server, UUID id) {
         Path file = getStorageDir(server).resolve(id + ".audio");
-        if (!Files.exists(file)) return null;
-        trackId(id);
+        if (!Files.exists(file)) {
+            // A recording made before the 1.0.4 rename still lives in the old directory.
+            // It is read where it lies rather than moved: a move can half-succeed, and
+            // there is nothing to gain by rewriting a file that reads correctly.
+            Path legacy = getLegacyStorageDir(server).resolve(id + ".audio");
+            if (!Files.exists(legacy)) return null;
+            file = legacy;
+        }
+        trackId(server, id);
         try {
             return Files.readAllBytes(file);
         } catch (IOException e) {
@@ -94,6 +125,12 @@ public class AudioStorage {
         if (data == null || data.length < 32) return false; // skip network placeholders
 
         UUID id = save(server, data);
+        if (id == null) {
+            // Keep the legacy component. It is the only copy of this audio, and the
+            // migration can be retried the next time the stack is touched.
+            SpatialAudioSystem.LOGGER.error("Audio migration deferred: file write failed");
+            return false;
+        }
         stack.set(ModDataComponents.AUDIO_ID, id);
         stack.remove(ModDataComponents.AUDIO_DATA);
         SpatialAudioSystem.LOGGER.info("Migrated audio data to file: {}", id);
@@ -154,21 +191,77 @@ public class AudioStorage {
         }
     }
 
-    /** Tracks all known AUDIO_IDs. Populated when audio is saved, loaded, or migrated. */
-    private static final Set<UUID> knownIds = ConcurrentHashMap.newKeySet();
-
     /** Register an ID as known (called on save, load, migrate). */
-    public static void trackId(UUID id) {
-        knownIds.add(id);
+    public static void trackId(MinecraftServer server, UUID id) {
+        AudioIdRegistry.get(server).track(id);
     }
 
     /**
-     * Collect all referenced AUDIO_IDs from player inventories and known-ID tracking.
-     * Block entity inventories are covered by the knownIds set (populated on load/playback).
+     * The periodic reclamation pass.
+     *
+     * <p>Refuses to run until the world's pre-existing audio has been adopted. An
+     * incomplete reference set is worse than not sweeping at all: every file the registry
+     * has not heard of reads as a stray, and cleanup would delete it.
+     */
+    public static void sweep(MinecraftServer server) {
+        AudioIdRegistry registry = AudioIdRegistry.get(server);
+        adoptExistingAudio(server, registry);
+        if (!registry.isSeeded()) return;
+
+        cleanupOrphans(server, collectReferencedIds(server));
+    }
+
+    /**
+     * Adopts audio that was already in the world the first time the registry runs.
+     *
+     * <p>Worlds created before the registry have files but no record of them, so without
+     * this every one of them would read as a stray within minutes of the upgrade. The
+     * files are themselves the record of what this world made, so the directory is the
+     * only honest thing to seed from.
+     */
+    private static void adoptExistingAudio(MinecraftServer server, AudioIdRegistry registry) {
+        if (registry.isSeeded()) return;
+
+        Path dir = getStorageDir(server);
+        if (!Files.exists(dir)) {
+            registry.markSeeded();
+            return;
+        }
+
+        int adopted = 0;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.audio")) {
+            for (Path file : stream) {
+                String name = file.getFileName().toString();
+                try {
+                    registry.track(UUID.fromString(name.substring(0, name.length() - ".audio".length())));
+                    adopted++;
+                } catch (IllegalArgumentException ignored) {
+                    // Not one of ours; leave it alone.
+                }
+            }
+        } catch (IOException e) {
+            // Stay unseeded so the sweep is skipped and retried. Marking it done here would
+            // hand cleanup a half-built reference set to delete against.
+            SpatialAudioSystem.LOGGER.error("Failed to adopt existing audio; cleanup postponed", e);
+            return;
+        }
+
+        if (adopted > 0) {
+            SpatialAudioSystem.LOGGER.info("Adopted {} existing audio files into the id registry", adopted);
+        }
+        registry.markSeeded();
+    }
+
+    /**
+     * Collect all AUDIO_IDs that must not be reclaimed.
+     *
+     * <p>Backed by {@link AudioIdRegistry}, which persists with the world, so an id
+     * stays referenced while its medium sits in an unloaded chunk or an offline
+     * player's inventory. Player inventories are still scanned so that an id which
+     * predates the registry is picked up on first sight.
      */
     public static Set<UUID> collectReferencedIds(MinecraftServer server) {
-        Set<UUID> ids = new HashSet<>(knownIds);
-        // Also scan player inventories for completeness
+        Set<UUID> ids = new HashSet<>(AudioIdRegistry.get(server).known());
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
                 ItemStack stack = player.getInventory().getItem(i);

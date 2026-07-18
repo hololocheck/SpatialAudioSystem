@@ -2,12 +2,12 @@ package com.spatialaudiosystem.network;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
+import com.spatialaudiosystem.server.ServerInteractionGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public record SetAttenuationRangePayload(BlockPos pos, int range) implements CustomPacketPayload {
@@ -29,9 +29,9 @@ public record SetAttenuationRangePayload(BlockPos pos, int range) implements Cus
 
     public static void handle(SetAttenuationRangePayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
-            var player = context.player();
-            BlockEntity entity = player.level().getBlockEntity(payload.pos);
-            if (entity instanceof PlaybackDeviceBlockEntity playbackDevice) {
+            PlaybackDeviceBlockEntity playbackDevice =
+                    ServerInteractionGuard.playbackDevice(context.player(), payload.pos);
+            if (playbackDevice != null) {
                 playbackDevice.setAttenuationRange(payload.range);
             }
         });

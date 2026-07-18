@@ -10,7 +10,10 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 public class ModNetworking {
     @SubscribeEvent
     public static void register(final RegisterPayloadHandlersEvent event) {
-        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.2");
+        // 1.3 split playback_finished out of playback_control so the stop command can be
+        //     checked against the sender's open menu without silencing natural completion.
+        // 1.4 every audio packet names the playback it belongs to.
+        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.4");
 
         registrar.playToServer(
                 AudioUploadStartPayload.TYPE,
@@ -40,6 +43,12 @@ public class ModNetworking {
                 PlaybackControlPayload.TYPE,
                 PlaybackControlPayload.STREAM_CODEC,
                 PlaybackControlPayload::handle
+        );
+
+        registrar.playToServer(
+                PlaybackFinishedPayload.TYPE,
+                PlaybackFinishedPayload.STREAM_CODEC,
+                PlaybackFinishedPayload::handle
         );
 
         registrar.playToServer(

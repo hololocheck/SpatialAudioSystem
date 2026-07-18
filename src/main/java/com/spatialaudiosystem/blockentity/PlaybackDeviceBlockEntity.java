@@ -1,6 +1,7 @@
 package com.spatialaudiosystem.blockentity;
 
 import com.spatialaudiosystem.audio.AudioStorage;
+import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.item.RangeBoardItem;
@@ -155,13 +156,14 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         setChanged();
         level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
 
-        ClientPlayAudioPayload metaPayload = new ClientPlayAudioPayload(
-                getBlockPos(), audioData.length, format, rangePos1, rangePos2,
-                attenuationMode, attRanges);
         if (level instanceof ServerLevel sl) {
-            for (ServerPlayer sp : sl.getServer().getPlayerList().getPlayers()) {
+            long playbackId = PlaybackSessionRegistry.begin(sl, getBlockPos());
+            ClientPlayAudioPayload metaPayload = new ClientPlayAudioPayload(
+                    getBlockPos(), playbackId, audioData.length, format, rangePos1, rangePos2,
+                    attenuationMode, attRanges);
+            for (ServerPlayer sp : sl.players()) {
                 PacketDistributor.sendToPlayer(sp, metaPayload);
-                ClientAudioChunkPayload.sendChunked(sp, getBlockPos(), audioData);
+                ClientAudioChunkPayload.sendChunked(sp, getBlockPos(), playbackId, audioData);
             }
         }
     }
@@ -171,9 +173,11 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         setChanged();
         if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
-            ClientStopAudioPayload clientPayload = new ClientStopAudioPayload(getBlockPos());
             if (level instanceof ServerLevel sl) {
-                for (ServerPlayer sp : sl.getServer().getPlayerList().getPlayers()) {
+                ClientStopAudioPayload clientPayload =
+                        new ClientStopAudioPayload(getBlockPos(), PlaybackSessionRegistry.currentId(sl, getBlockPos()));
+                PlaybackSessionRegistry.end(sl, getBlockPos());
+                for (ServerPlayer sp : sl.players()) {
                     PacketDistributor.sendToPlayer(sp, clientPayload);
                 }
             }

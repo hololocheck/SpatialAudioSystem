@@ -9,13 +9,14 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
+import java.util.BitSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Server → Client: one chunk of audio data for playback.
  * Chunks are reassembled client-side; playback starts when all chunks arrive.
  */
-public record ClientAudioChunkPayload(BlockPos pos, int chunkIndex, int chunkCount, byte[] data)
+public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIndex, int chunkCount, byte[] data)
         implements CustomPacketPayload {
 
     private static final int CHUNK_SIZE = 500 * 1024; // 500 KB per chunk
@@ -28,6 +29,7 @@ public record ClientAudioChunkPayload(BlockPos pos, int chunkIndex, int chunkCou
 
     private static void write(FriendlyByteBuf buf, ClientAudioChunkPayload p) {
         buf.writeBlockPos(p.pos);
+        buf.writeLong(p.playbackId);
         buf.writeInt(p.chunkIndex);
         buf.writeInt(p.chunkCount);
         buf.writeByteArray(p.data);
@@ -35,7 +37,8 @@ public record ClientAudioChunkPayload(BlockPos pos, int chunkIndex, int chunkCou
 
     private static ClientAudioChunkPayload read(FriendlyByteBuf buf) {
         return new ClientAudioChunkPayload(
-                buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readByteArray(CHUNK_SIZE + 1024));
+                buf.readBlockPos(), buf.readLong(), buf.readInt(), buf.readInt(),
+                buf.readByteArray(CHUNK_SIZE + 1024));
     }
 
     // ---- Client-side reassembly ----
@@ -50,15 +53,14 @@ public record ClientAudioChunkPayload(BlockPos pos, int chunkIndex, int chunkCou
     }
 
     /** Called when ClientPlayAudioPayload (metadata) arrives — prepare the reassembly buffer. */
-    public static void prepareSession(BlockPos pos, int totalSize, String format,
+    public static void prepareSession(BlockPos pos, long playbackId, int totalSize, String format,
                                        BlockPos rangePos1, BlockPos rangePos2,
                                        boolean attenuationMode, int[] attenuationRanges) {
-        // Clean up any expired sessions first
         long now = System.currentTimeMillis();
         activeSessions.entrySet().removeIf(e -> now - e.getValue().createdAt > SESSION_TIMEOUT_MS);
 
         activeSessions.put(pos, new DownloadSession(
-                totalSize, format, rangePos1, rangePos2, attenuationMode, attenuationRanges));
+                playbackId, totalSize, format, rangePos1, rangePos2, attenuationMode, attenuationRanges));
     }
 
     public static void handle(ClientAudioChunkPayload payload, IPayloadContext context) {
@@ -68,28 +70,29 @@ public record ClientAudioChunkPayload(BlockPos pos, int chunkIndex, int chunkCou
                 SpatialAudioSystem.LOGGER.warn("Received audio chunk for {} without active session", payload.pos);
                 return;
             }
+            // Chunks of a sound that has already been replaced must not be written into
+            // the buffer of the one that replaced it.
+            if (session.playbackId != payload.playbackId) return;
 
-            int offset = payload.chunkIndex * CHUNK_SIZE;
-            int len = Math.min(payload.data.length, session.buffer.length - offset);
-            if (len > 0) {
-                System.arraycopy(payload.data, 0, session.buffer, offset, len);
-            }
-            session.receivedChunks++;
-
-            if (session.receivedChunks >= payload.chunkCount) {
+            if (!session.accept(payload.chunkIndex, payload.data)) {
                 activeSessions.remove(payload.pos);
-                // All chunks received — start playback
-                AudioManager.getInstance().playAudio(
-                        context.player().level(), payload.pos, session.buffer, session.format,
-                        session.rangePos1, session.rangePos2,
-                        session.attenuationMode, session.attenuationRanges);
+                SpatialAudioSystem.LOGGER.warn("Discarding audio download for {}: chunk {} does not fit the transfer",
+                        payload.pos, payload.chunkIndex);
+                return;
             }
+
+            if (!session.isComplete()) return;
+            activeSessions.remove(payload.pos);
+            AudioManager.getInstance().playAudio(
+                    context.player().level(), payload.pos, session.playbackId, session.buffer, session.format,
+                    session.rangePos1, session.rangePos2,
+                    session.attenuationMode, session.attenuationRanges);
         });
     }
 
     /** Send audio data to a player in chunks. */
     public static void sendChunked(net.minecraft.server.level.ServerPlayer player,
-                                    BlockPos pos, byte[] audioData) {
+                                    BlockPos pos, long playbackId, byte[] audioData) {
         int chunkCount = (audioData.length + CHUNK_SIZE - 1) / CHUNK_SIZE;
         for (int i = 0; i < chunkCount; i++) {
             int offset = i * CHUNK_SIZE;
@@ -97,7 +100,7 @@ public record ClientAudioChunkPayload(BlockPos pos, int chunkIndex, int chunkCou
             byte[] chunk = new byte[len];
             System.arraycopy(audioData, offset, chunk, 0, len);
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
-                    player, new ClientAudioChunkPayload(pos, i, chunkCount, chunk));
+                    player, new ClientAudioChunkPayload(pos, playbackId, i, chunkCount, chunk));
         }
     }
 
@@ -105,16 +108,20 @@ public record ClientAudioChunkPayload(BlockPos pos, int chunkIndex, int chunkCou
     public Type<? extends CustomPacketPayload> type() { return TYPE; }
 
     private static class DownloadSession {
+        final long playbackId;
         final byte[] buffer;
         final String format;
         final BlockPos rangePos1, rangePos2;
         final boolean attenuationMode;
         final int[] attenuationRanges;
         final long createdAt;
-        int receivedChunks;
+        /** Which indices have arrived. Counting receipts instead would let a repeated
+         *  chunk hand a half-zero buffer to the decoder. */
+        final BitSet received;
 
-        DownloadSession(int totalSize, String format, BlockPos rangePos1, BlockPos rangePos2,
+        DownloadSession(long playbackId, int totalSize, String format, BlockPos rangePos1, BlockPos rangePos2,
                         boolean attenuationMode, int[] attenuationRanges) {
+            this.playbackId = playbackId;
             this.buffer = new byte[totalSize];
             this.format = format;
             this.rangePos1 = rangePos1;
@@ -122,7 +129,29 @@ public record ClientAudioChunkPayload(BlockPos pos, int chunkIndex, int chunkCou
             this.attenuationMode = attenuationMode;
             this.attenuationRanges = attenuationRanges;
             this.createdAt = System.currentTimeMillis();
-            this.receivedChunks = 0;
+            this.received = new BitSet(chunkCountFor(totalSize));
         }
+
+        private int expectedLength(int index) {
+            return Math.min(CHUNK_SIZE, buffer.length - index * CHUNK_SIZE);
+        }
+
+        boolean accept(int index, byte[] data) {
+            if (index < 0 || index >= chunkCountFor(buffer.length)) return false;
+            if (received.get(index)) return false;
+            if (data.length != expectedLength(index)) return false;
+
+            System.arraycopy(data, 0, buffer, index * CHUNK_SIZE, data.length);
+            received.set(index);
+            return true;
+        }
+
+        boolean isComplete() {
+            return received.cardinality() == chunkCountFor(buffer.length);
+        }
+    }
+
+    private static int chunkCountFor(int totalSize) {
+        return (totalSize + CHUNK_SIZE - 1) / CHUNK_SIZE;
     }
 }

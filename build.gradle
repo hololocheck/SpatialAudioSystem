@@ -11,7 +11,10 @@ group = 'com.spatialaudiosystem'
 
 repositories {
     mavenLocal()
+    mavenCentral()
     maven { url = 'https://maven.neoforged.net/releases' }
+    // Manta is embedded via jarJar; this is where its obfuscated distributable lives.
+    maven { url = 'file:///C:/minecraftmode/manta/repo' }
 }
 
 base {
@@ -40,6 +43,11 @@ neoForge {
             sourceSet sourceSets.main
         }
     }
+
+    unitTest {
+        enable()
+        testedMod = mods.spatialaudiosystem
+    }
 }
 
 dependencies {
@@ -47,9 +55,35 @@ dependencies {
     implementation 'com.googlecode.soundlibs:mp3spi:1.9.5.4'
     implementation 'com.googlecode.soundlibs:jlayer:1.0.1.4'
     implementation 'com.googlecode.soundlibs:tritonus-share:0.3.7.4'
+
+    // Manta UI library. Compile against the readable jar for full signatures; ship the
+    // obfuscated one embedded (jarJar), so a user running several BelugaLab mods loads a
+    // single Manta - the newest that satisfies every mod's range.
+    compileOnly files("../manta/build/libs/manta-1.0.5.jar")
+    jarJar(implementation("com.manta:manta:[1.0.2,2)")) {
+        version { prefer "1.0.5" }
+    }
+
+    // Unit-test infrastructure. Mirrors the Manta repo's setup.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testImplementation 'org.assertj:assertj-core:3.25.3'
+    testImplementation 'org.mockito:mockito-core:5.11.0'
+    testImplementation 'org.objenesis:objenesis:3.3'
+    testRuntimeOnly    'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
 }
 
 jar {
+    // Pull the nested-jar metadata + embedded Manta into the mod jar (ModDevGradle has no
+    // jarJar.enable(); this is the equivalent wiring).
+    from(tasks.named('jarJar'))
     from {
         configurations.runtimeClasspath.filter {
             it.name.contains('mp3spi') || it.name.contains('jlayer') || it.name.contains('tritonus')

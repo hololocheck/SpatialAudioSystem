@@ -18,6 +18,9 @@ public class SpatialAudioSystem {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     public SpatialAudioSystem(IEventBus modEventBus) {
+        // Before anything can be loaded from a world save.
+        LegacyIdAliases.register();
+
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
         ModBlockEntities.register(modEventBus);

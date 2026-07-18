@@ -2,7 +2,7 @@ package com.spatialaudiosystem.client;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.audio.AudioManager;
-import com.spatialaudiosystem.network.PlaybackControlPayload;
+import com.spatialaudiosystem.network.PlaybackFinishedPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.neoforged.api.distmarker.Dist;
@@ -28,9 +28,10 @@ public class ClientTickHandler {
         AudioManager.updateLocalPlayerPos(mc.player.getX(), mc.player.getY(), mc.player.getZ());
 
         // Update gain for all active playbacks and collect finished ones
-        for (BlockPos finishedPos : AudioManager.tickGain()) {
+        for (AudioManager.FinishedPlayback finished : AudioManager.tickGain()) {
             // Notify server that playback ended so it updates isPlaying status
-            PacketDistributor.sendToServer(new PlaybackControlPayload(finishedPos, false));
+            PacketDistributor.sendToServer(
+                    new PlaybackFinishedPayload(finished.pos(), finished.playbackId()));
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.spatialaudiosystem.network;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
+import com.spatialaudiosystem.server.ServerInteractionGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -39,11 +40,18 @@ public record AudioUploadStartPayload(BlockPos pos, String fileName, String form
             var player = context.player();
             if (payload.totalSize > AudioUploadChunkPayload.MAX_TOTAL_SIZE) {
                 player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        "\u00a7cAudio file too large (" + (payload.totalSize / 1024 / 1024) + " MB). Maximum is 10 MB."));
+                        "§cAudio file too large (" + (payload.totalSize / 1024 / 1024) + " MB). Maximum is 10 MB."));
                 return;
             }
-            AudioUploadChunkPayload.startUpload(player.getUUID(), payload.pos,
-                    payload.fileName, payload.format, payload.totalSize, payload.chunkCount);
+            // An upload targets the device whose screen the sender has open, so a client
+            // cannot stage bytes onto someone else's recorder.
+            if (ServerInteractionGuard.recordingDevice(player, payload.pos) == null) return;
+
+            if (!AudioUploadChunkPayload.startUpload(player.getUUID(), payload.pos,
+                    payload.fileName, payload.format, payload.totalSize, payload.chunkCount)) {
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "§cAudio upload rejected."));
+            }
         });
     }
 
