@@ -1,5 +1,6 @@
 package com.spatialaudiosystem.client;
 
+import com.manta.api.image.MantaImage;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.network.RequestArtPayload;
@@ -9,7 +10,6 @@ import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -55,7 +55,9 @@ public final class ClientArtCache {
 
         NativeImage img;
         try {
-            img = NativeImage.read(new ByteArrayInputStream(art));
+            // MantaImage 経由 (NativeImage.read 単体は PNG signature ゲートで JPEG を弾く。
+            // 埋め込みカバーアートは JPEG が大半なので直接呼ぶと大半が無音で落ちる)。
+            img = MantaImage.decode(art);
         } catch (IOException e) {
             NO_ART.add(id);
             SpatialAudioSystem.LOGGER.warn("Could not decode cover art for {}", id, e);
