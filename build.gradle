@@ -92,6 +92,17 @@ jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
+// The deploy loop takes the "-all" jar as the Manta-carrying dev artifact, the same convention TSU
+// follows. SAS folds the jarJar output straight into its mod jar, so the two are identical in
+// content; publishing the alias keeps one deploy rule working across both mods.
+tasks.register('allJar', Copy) {
+    dependsOn tasks.named('jar')
+    from(tasks.named('jar').flatMap { it.archiveFile })
+    into layout.buildDirectory.dir('libs')
+    rename { "${base.archivesName.get()}-${version}-all.jar" }
+}
+tasks.named('build') { dependsOn 'allJar' }
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }

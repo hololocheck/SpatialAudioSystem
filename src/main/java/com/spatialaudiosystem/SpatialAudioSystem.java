@@ -21,6 +21,9 @@ public class SpatialAudioSystem {
         // Before anything can be loaded from a world save.
         LegacyIdAliases.register();
 
+        // Manta serves this mod's wiki pages (assets/spatialaudiosystem/wiki/**) alongside its own.
+        com.manta.MantaBootstrap.registerWikiMod(MOD_ID);
+
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
         ModBlockEntities.register(modEventBus);

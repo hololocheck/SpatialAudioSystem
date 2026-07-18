@@ -37,7 +37,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     private static final int COLOR_PLAYING = 0xFF55FF55;
     private static final int COLOR_STOPPED = 0xFFAAAAAA;
-    private static final int FILE_MAX_W = 128;
+    private static final int FILE_MAX_W = 190;
     private static final int ROW_STRIDE = 35;      // matches playback-schedule.json
     private static final int FIRST_ROW_Y = 52;     // first entry row Y in the overlay
     private static final int SLOT_ROW_X = 193;     // media-slot-frame x(192) + 1
@@ -90,9 +90,46 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         this.rangeVisible = be.isShowRange();
     }
 
-    // No wiki page yet: the button is placed for §4.17 header parity but inert.
     @Override
-    protected String wikiPageId() { return null; }
+    protected String wikiPageId() { return "playback-device"; }
+
+    /**
+     * Wiki capture: a stand-alone screen over a dummy block entity with a loaded medium, a range
+     * board and a few schedule entries, so both the main shot and the schedule shot show content.
+     */
+    public static PlaybackDeviceScreenV2 wikiCreate() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return null;
+        PlaybackDeviceBlockEntity be = new PlaybackDeviceBlockEntity(mc.player.blockPosition(),
+                com.spatialaudiosystem.block.ModBlocks.PLAYBACK_DEVICE.get().defaultBlockState());
+        be.setLevel(mc.level);
+        be.getInventory().setStackInSlot(PlaybackDeviceBlockEntity.MEDIA_SLOT,
+                sampleMedium("departure_melody.mp3"));
+        be.getInventory().setStackInSlot(PlaybackDeviceBlockEntity.RANGE_SLOT,
+                new ItemStack(ModItems.RANGE_BOARD.get()));
+        String[] entries = {"chime.ogg", "announce_next.mp3", "door_close.wav"};
+        for (int i = 0; i < entries.length; i++) {
+            be.addEntry();
+            be.getPlaylist().setStackInSlot(i, sampleMedium(entries[i]));
+            be.setPlayCount(i, i + 1);
+        }
+        Inventory inv = new Inventory(mc.player);   // empty: keep the player's own items out of the shot
+        return new PlaybackDeviceScreenV2(new PlaybackDeviceMenu(0, inv, be), inv,
+                Component.translatable("block.spatialaudiosystem.playback_device"));
+    }
+
+    private static ItemStack sampleMedium(String fileName) {
+        ItemStack s = new ItemStack(ModItems.RECORDING_MEDIUM.get());
+        s.set(ModDataComponents.AUDIO_FILE_NAME, fileName);
+        s.set(ModDataComponents.AUDIO_FORMAT, fileName.substring(fileName.lastIndexOf('.') + 1));
+        return s;
+    }
+
+    /** Wiki capture: force the shot to the main view or to the open schedule popup. */
+    public void wikiApplyState(String state) {
+        showSchedule = "schedule".equals(state);
+        scheduleOpenedAtNanos = 0L;   // no open animation, and slot items draw immediately
+    }
 
     @Override
     protected String layoutJson() { return SasLayouts.load("layouts/playback-device.json"); }
@@ -144,6 +181,9 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     return Component.translatable(
                             "gui.spatialaudiosystem.format_prefix", fmt.toUpperCase()).getString();
                 }
+                case "pb-atten-range":
+                    return Component.translatable("gui.spatialaudiosystem.attenuation_range",
+                            be.getAttenuationRange()).getString();
                 case "pb-entry-index": {
                     int idx = JsonLayoutEngine.currentRepeatIndex();
                     return idx >= 0 ? String.valueOf(idx + 1) : "";

@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "index.md",
+    "memory-device.md",
+    "playback-device.md",
+    "playback-device/schedule.md",
+    "tools/range-board.md"
+  ]
+}

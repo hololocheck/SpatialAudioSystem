@@ -42,9 +42,30 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
         super(menu, playerInv, title);
     }
 
-    // No wiki page yet: the button is placed per request (§4.17 header parity) but inert.
     @Override
-    protected String wikiPageId() { return null; }
+    protected String wikiPageId() { return "memory-device"; }
+
+    /**
+     * Wiki capture: a stand-alone screen over a dummy block entity holding sample media, so the
+     * documentation shot shows a written medium rather than an empty device.
+     */
+    public static RecordingDeviceScreenV2 wikiCreate() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return null;
+        RecordingDeviceBlockEntity be = new RecordingDeviceBlockEntity(mc.player.blockPosition(),
+                com.spatialaudiosystem.block.ModBlocks.RECORDING_DEVICE.get().defaultBlockState());
+        be.setLevel(mc.level);
+        be.getInventory().setStackInSlot(RecordingDeviceBlockEntity.INPUT_SLOT,
+                new ItemStack(ModItems.RECORDING_MEDIUM.get()));
+        ItemStack written = new ItemStack(ModItems.RECORDING_MEDIUM.get());
+        written.set(ModDataComponents.AUDIO_FILE_NAME, "departure_melody.mp3");
+        written.set(ModDataComponents.AUDIO_FORMAT, "mp3");
+        written.set(ModDataComponents.AUDIO_DURATION_SEC, 32);
+        be.getInventory().setStackInSlot(RecordingDeviceBlockEntity.OUTPUT_SLOT, written);
+        Inventory inv = new Inventory(mc.player);   // empty: keep the player's own items out of the shot
+        return new RecordingDeviceScreenV2(new RecordingDeviceMenu(0, inv, be), inv,
+                Component.translatable("block.spatialaudiosystem.recording_device"));
+    }
 
     @Override
     protected String layoutJson() { return SasLayouts.load("layouts/recording-device.json"); }

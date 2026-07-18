@@ -27,6 +27,9 @@ public class ModScreens {
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
+            // Hover hints + F1 wiki jumps for every SAS screen element.
+            SasScreenHints.registerAll();
+
             ItemProperties.register(ModItems.RECORDING_MEDIUM.get(),
                     ResourceLocation.fromNamespaceAndPath(SpatialAudioSystem.MOD_ID, "audio_format"),
                     (stack, level, entity, seed) -> {
