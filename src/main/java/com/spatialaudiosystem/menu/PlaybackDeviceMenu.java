@@ -14,6 +14,9 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.items.SlotItemHandler;
 
 public class PlaybackDeviceMenu extends AbstractContainerMenu {
+    /** Menu index of the first playlist media slot (after media, range, 36 player-inventory slots). */
+    public static final int PLAYLIST_MENU_BASE = PlaybackDeviceBlockEntity.SLOT_COUNT + 36; // 38
+
     private final PlaybackDeviceBlockEntity blockEntity;
     private final ContainerLevelAccess access;
 
@@ -30,15 +33,13 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
 
         ItemStackHandler handler = blockEntity.getInventory();
 
-        // Media slot (slot 0) - right of play/stop buttons (lower row)
+        // Media + range slots (menu 0,1) — positions come from the main JSON (syncSlotPositions).
         this.addSlot(new SlotItemHandler(handler, PlaybackDeviceBlockEntity.MEDIA_SLOT, 151, 49) {
             @Override
             public boolean mayPlace(ItemStack stack) {
                 return stack.is(ModItems.RECORDING_MEDIUM.get());
             }
         });
-
-        // Range board slot (slot 1) - right of attenuation/visibility buttons (upper row)
         this.addSlot(new SlotItemHandler(handler, PlaybackDeviceBlockEntity.RANGE_SLOT, 151, 30) {
             @Override
             public boolean mayPlace(ItemStack stack) {
@@ -46,9 +47,25 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
             }
         });
 
-        // Player inventory
+        // Player inventory (menu 2..37) — must precede the popup slots so syncSlotPositions maps
+        // the main layout's isSlot order (media, range, inventory) onto menu slots 0..37.
         addPlayerInventory(playerInventory);
         addPlayerHotbar(playerInventory);
+
+        // Playlist media slots (menu 38..43) — off-screen until the schedule popup positions them.
+        ItemStackHandler playlist = blockEntity.getPlaylist();
+        for (int i = 0; i < PlaybackDeviceBlockEntity.PLAYLIST_SIZE; i++) {
+            this.addSlot(new SlotItemHandler(playlist, i, -1000, -1000) {
+                @Override
+                public boolean mayPlace(ItemStack stack) {
+                    return stack.is(ModItems.RECORDING_MEDIUM.get());
+                }
+                @Override
+                public boolean isActive() {
+                    return this.x >= 0;   // inactive (and unclickable) while the popup is closed
+                }
+            });
+        }
     }
 
     private static PlaybackDeviceBlockEntity getBlockEntity(Inventory playerInventory, FriendlyByteBuf data) {
@@ -69,14 +86,26 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
             ItemStack slotStack = slot.getItem();
             quickMoveStack = slotStack.copy();
 
-            if (index < PlaybackDeviceBlockEntity.SLOT_COUNT) {
-                if (!this.moveItemStackTo(slotStack, PlaybackDeviceBlockEntity.SLOT_COUNT, this.slots.size(), true)) {
+            int playerStart = PlaybackDeviceBlockEntity.SLOT_COUNT;   // 2
+            boolean deviceSlot = index < playerStart || index >= PLAYLIST_MENU_BASE;
+            if (deviceSlot) {
+                // Device (media / range / playlist) → player inventory
+                if (!this.moveItemStackTo(slotStack, playerStart, PLAYLIST_MENU_BASE, true)) {
+                    return ItemStack.EMPTY;
+                }
+            } else if (slotStack.is(ModItems.RANGE_BOARD.get())) {
+                if (!this.moveItemStackTo(slotStack, PlaybackDeviceBlockEntity.RANGE_SLOT,
+                        PlaybackDeviceBlockEntity.RANGE_SLOT + 1, false)) {
+                    return ItemStack.EMPTY;
+                }
+            } else if (slotStack.is(ModItems.RECORDING_MEDIUM.get())) {
+                // Playlist entries are filled by dragging into the popup; shift-click targets media slot 0.
+                if (!this.moveItemStackTo(slotStack, PlaybackDeviceBlockEntity.MEDIA_SLOT,
+                        PlaybackDeviceBlockEntity.MEDIA_SLOT + 1, false)) {
                     return ItemStack.EMPTY;
                 }
             } else {
-                if (!this.moveItemStackTo(slotStack, 0, PlaybackDeviceBlockEntity.SLOT_COUNT, false)) {
-                    return ItemStack.EMPTY;
-                }
+                return ItemStack.EMPTY;
             }
 
             if (slotStack.isEmpty()) {
@@ -91,6 +120,18 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
     @Override
     public boolean stillValid(Player player) {
         return stillValid(this.access, player, com.spatialaudiosystem.block.ModBlocks.PLAYBACK_DEVICE.get());
+    }
+
+    @Override
+    public boolean clickMenuButton(Player player, int id) {
+        if (id == belugalab.tsu.api.OwnerAccess.TOGGLE_BUTTON) {
+            java.util.UUID owner = blockEntity.getOwnerUUID();
+            if (owner == null || owner.equals(player.getUUID())) {   // owner-only toggle
+                blockEntity.togglePrivateMode();
+            }
+            return true;
+        }
+        return super.clickMenuButton(player, id);
     }
 
     private void addPlayerInventory(Inventory playerInventory) {

@@ -39,6 +39,12 @@ public class ModNetworking {
                 TestPlayRecordingPayload::handle
         );
 
+        registrar.playToServer(
+                PlaylistCommandPayload.TYPE,
+                PlaylistCommandPayload.STREAM_CODEC,
+                PlaylistCommandPayload::handle
+        );
+
         registrar.optional().playToServer(
                 RequestArtPayload.TYPE,
                 RequestArtPayload.STREAM_CODEC,
