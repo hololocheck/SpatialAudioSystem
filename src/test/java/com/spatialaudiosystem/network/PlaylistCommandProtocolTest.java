@@ -68,6 +68,13 @@ class PlaylistCommandProtocolTest {
     }
 
     @Test
+    @DisplayName("SAS-NET-005: the schedule-mode toggle op round-trips")
+    void toggleModeRoundTrips() {
+        PlaylistCommandPayload p = decode(PlaylistCommandPayload.OP_TOGGLE_MODE, 0, 0);
+        assertThat(p.op()).isEqualTo(PlaylistCommandPayload.OP_TOGGLE_MODE);
+    }
+
+    @Test
     @DisplayName("SAS-NET-005: a reorder target or play-count delta outside its range is refused")
     void refusesSecondArgumentOutOfRange() {
         assertThatThrownBy(() -> decode(PlaylistCommandPayload.OP_REORDER, 0, 9_999))

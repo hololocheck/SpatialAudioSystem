@@ -26,7 +26,7 @@ The block that plays media written by the [Memory Device](memory-device.md). It 
 | Set the range | Put a [Range Board](tools/range-board.md) in the **range slot** |
 | Toggle attenuation | The **Attenuate** switch |
 | Show the range | The **Show Range** switch |
-| Build a sequence | The **♪ Schedule** button → [schedule screen](playback-device/schedule.md) |
+| Build a sequence | Turn the **schedule toggle on** → the **♪ Schedule** button → [schedule screen](playback-device/schedule.md) |
 | Public / private | The **face icon** on the right |
 
 ## Reading the screen
@@ -45,6 +45,9 @@ The block that plays media written by the [Memory Device](memory-device.md). It 
 
 > [!NOTE]
 > **One stop for everything.** The **■** button halts a single medium and a running [♪ Schedule](playback-device/schedule.md) sequence alike.
+
+> [!NOTE]
+> **While the schedule toggle is on, the media slot is barred with a ✕.** Shift-clicked media goes into the schedule's free rows, and **▶ starts the schedule** instead of a single medium; switch the toggle off to return to single play.
 
 ## Related
 

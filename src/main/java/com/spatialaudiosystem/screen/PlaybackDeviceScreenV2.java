@@ -37,6 +37,9 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     private static final int COLOR_PLAYING = 0xFF55FF55;
     private static final int COLOR_STOPPED = 0xFFAAAAAA;
+    private static final int COLOR_SCHED_ON = 0xFFFFC107;        // amber: the ♪ button is armed
+    private static final int COLOR_SCHED_OFF_TEXT = 0xFF777777;  // grey: toggle it on first
+    private static final int COLOR_SCHED_OFF_BORDER = 0xFF555555;
     private static final int FILE_MAX_W = 190;
     private static final int ROW_STRIDE = 35;      // matches playback-schedule.json
     private static final int FIRST_ROW_Y = 52;     // first entry row Y in the overlay
@@ -78,6 +81,19 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                 PacketDistributor.sendToServer(new ToggleRangeDisplayPayload(pos()));
             });
 
+    /** Schedule mode: arms the ♪ button and bars the media slot (server flips the real state). */
+    private boolean scheduleModeOn;
+
+    private final ToggleSwitchController scheduleToggle = new ToggleSwitchController(
+            "pb-sched-toggle-track", "pb-sched-toggle-knob",
+            () -> scheduleModeOn,
+            v -> {
+                scheduleModeOn = v;
+                if (!v) closeSchedule();
+                PacketDistributor.sendToServer(new PlaylistCommandPayload(
+                        pos(), PlaylistCommandPayload.OP_TOGGLE_MODE, 0, 0));
+            });
+
     public PlaybackDeviceScreenV2(PlaybackDeviceMenu menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
     }
@@ -88,6 +104,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         PlaybackDeviceBlockEntity be = this.menu.getBlockEntity();
         this.attenuationOn = be.isAttenuationMode();
         this.rangeVisible = be.isShowRange();
+        this.scheduleModeOn = be.isScheduleMode();
     }
 
     @Override
@@ -125,9 +142,12 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         return s;
     }
 
-    /** Wiki capture: force the shot to the main view or to the open schedule popup. */
+    /** Wiki capture: force the shot to the main view or to the armed, open schedule popup. */
     public void wikiApplyState(String state) {
-        showSchedule = "schedule".equals(state);
+        boolean sched = "schedule".equals(state);
+        showSchedule = sched;
+        scheduleModeOn = sched;
+        if (sched && !be().isScheduleMode()) be().toggleScheduleMode();   // dummy client BE: no packets
         scheduleOpenedAtNanos = 0L;   // no open animation, and slot items draw immediately
     }
 
@@ -166,6 +186,14 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                             ? Component.translatable("gui.spatialaudiosystem.status_playing").getString()
                             : Component.translatable("gui.spatialaudiosystem.status_stopped").getString();
                 case "pb-file": {
+                    if (scheduleModeOn) {
+                        int tracks = 0;
+                        for (int i = 0; i < be.getEntryCount(); i++) {
+                            if (!be.getPlaylist().getStackInSlot(i).isEmpty()) tracks++;
+                        }
+                        return Component.translatable(
+                                "gui.spatialaudiosystem.tracks_scheduled", tracks).getString();
+                    }
                     ItemStack media = be.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.MEDIA_SLOT);
                     String name = media.get(ModDataComponents.AUDIO_FILE_NAME);
                     if (name == null) {
@@ -175,6 +203,14 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                             "gui.spatialaudiosystem.file_prefix", name).getString(), FILE_MAX_W);
                 }
                 case "pb-format": {
+                    if (scheduleModeOn) {
+                        int idx = be.getPlayingEntry();
+                        String name = idx < 0 ? null
+                                : be.getPlaylist().getStackInSlot(idx).get(ModDataComponents.AUDIO_FILE_NAME);
+                        if (name == null) return "";
+                        return trimToFit(Component.translatable(
+                                "gui.spatialaudiosystem.now_playing", name).getString(), FILE_MAX_W);
+                    }
                     ItemStack media = be.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.MEDIA_SLOT);
                     if (!media.has(ModDataComponents.AUDIO_FILE_NAME)) return "";
                     String fmt = media.getOrDefault(ModDataComponents.AUDIO_FORMAT, "unknown");
@@ -214,6 +250,11 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             case "pb-atten-knob-bg":  return attenuationToggle.knobBg();
             case "pb-range-track-bg": return rangeToggle.trackBg();
             case "pb-range-knob-bg":  return rangeToggle.knobBg();
+            case "pb-sched-toggle-track-bg": return scheduleToggle.trackBg();
+            case "pb-sched-toggle-knob-bg":  return scheduleToggle.knobBg();
+            case "pb-sched-btn-color":  return scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT;
+            case "pb-sched-btn-border": return scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_BORDER;
+            case "pb-sched-btn-bg":     return scheduleModeOn ? 0x1AFFC107 : 0x0DFFFFFF;
             case "owner-border":
                 return belugalab.tsu.api.OwnerAccess.ringColor(be().isPrivateMode());
             case "pb-entry-row-bg": {
@@ -236,6 +277,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         switch (key) {
             case "pb-atten-knob-x": return attenuationToggle.knobX(defaultValue);
             case "pb-range-knob-x": return rangeToggle.knobX(defaultValue);
+            case "pb-sched-toggle-knob-x": return scheduleToggle.knobX(defaultValue);
             case "pb-entry-count":  return showSchedule ? be().getEntryCount() : 0;
             case "pb-playing-frame-y": {
                 int idx = Math.max(0, be().getPlayingEntry());
@@ -251,6 +293,9 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         if ("pb-playing-frame-visible".equals(key)) {
             return showSchedule && be().getPlayingEntry() >= 0;
         }
+        // The media-slot ✕ is an engine element so it rides the open/close animation;
+        // a Java overdraw sat still while the rest of the dialog scaled.
+        if ("pb-media-locked".equals(key)) return scheduleModeOn;
         return null;
     }
 
@@ -273,6 +318,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         if (belugalab.tsu.api.HintToggleHelper.handleClick(classes)) return;
         if (attenuationToggle.handleClick(classes)) return;
         if (rangeToggle.handleClick(classes)) return;
+        if (scheduleToggle.handleClick(classes)) return;
         if (belugalab.tsu.api.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
             sendButtonClick(belugalab.tsu.api.OwnerAccess.TOGGLE_BUTTON);
             return;
@@ -286,7 +332,13 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     return;
                 }
                 case "pb-play-btn":
-                    PacketDistributor.sendToServer(new PlaybackControlPayload(pos(), true));
+                    if (scheduleModeOn) {
+                        // In schedule mode the main play button drives the schedule too.
+                        PacketDistributor.sendToServer(new PlaylistCommandPayload(
+                                pos(), PlaylistCommandPayload.OP_PLAY_ALL, 0, 0));
+                    } else {
+                        PacketDistributor.sendToServer(new PlaybackControlPayload(pos(), true));
+                    }
                     return;
                 case "pb-stop-btn":
                 case "pb-sched-stop-btn":
@@ -299,6 +351,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                             pos(), PlaylistCommandPayload.OP_PLAY_ALL, 0, 0));
                     return;
                 case "pb-sched-btn":
+                    if (!scheduleModeOn) return;   // armed by the toggle beside it
                     showSchedule = true;
                     scheduleOpenedAtNanos = System.nanoTime();
                     return;
@@ -350,22 +403,115 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         if (showSchedule) positionScheduleSlots(); else hideScheduleSlots();
         super.render(g, mouseX, mouseY, partialTick);
-        if (showSchedule) renderScheduleOverlayItems(g, mouseX, mouseY);
+        if (showSchedule) {
+            renderScheduleOverlayItems(g, mouseX, mouseY);
+            renderCarriedAbovePopup(g, mouseX, mouseY);
+            renderHoveredPlaylistTooltip(g, mouseX, mouseY);
+        }
     }
 
-    /** Move each active playlist slot over its overlay row frame; the rest go off-screen. */
+    /**
+     * Vanilla draws the carried stack under the popup panel, so an item dragged over the schedule
+     * disappeared behind it. Draw it again above the panel — same spot and scale, so nothing shifts.
+     */
+    private void renderCarriedAbovePopup(GuiGraphics g, int mouseX, int mouseY) {
+        ItemStack carried = this.menu.getCarried();
+        if (carried.isEmpty()) return;
+        float s = dialogScale();
+        g.pose().pushPose();
+        g.pose().translate(mouseX, mouseY, 800);   // slot items 700 < carried 800 < tooltip 900
+        g.pose().scale(s, s, 1f);
+        g.renderItem(carried, -8, -8);
+        g.renderItemDecorations(this.font, carried, -8, -8);
+        g.pose().popPose();
+    }
+
+    /** Base tooltips render under the popup too; redraw the hovered playlist slot's above it. */
+    private void renderHoveredPlaylistTooltip(GuiGraphics g, int mouseX, int mouseY) {
+        if (!this.menu.getCarried().isEmpty()) return;
+        Slot slot = hoveredPlaylistSlot(mouseX, mouseY);
+        if (slot == null || !slot.hasItem()) return;
+        ItemStack stack = slot.getItem();
+        g.pose().pushPose();
+        g.pose().translate(0, 0, 900);
+        g.renderTooltip(this.font, this.getTooltipFromContainerItem(stack),
+                stack.getTooltipImage(), mouseX, mouseY);
+        g.pose().popPose();
+    }
+
+    /**
+     * Move each active playlist slot over its overlay row frame; the rest go off-screen.
+     *
+     * <p>Coordinates are raw screen offsets from {@code leftPos} (TSU's convention): popup slots
+     * are never reached through vanilla's transformed click path — {@link #mouseClicked} hit-tests
+     * them with the raw mouse and issues the click itself — so their positions must be raw too.
+     * The overlay scale still multiplies the logical offsets so the hit areas track the visible
+     * frames when the dialog is auto-scaled or resized.
+     */
     private void positionScheduleSlots() {
-        int dx = overlayX() - this.leftPos;
-        int dy = overlayY() - this.topPos;
+        float s = dialogScale();
         int n = be().getEntryCount();
         for (int i = 0; i < PlaybackDeviceBlockEntity.MAX_ENTRIES; i++) {
             int slotIdx = PlaybackDeviceMenu.PLAYLIST_MENU_BASE + i;
             if (i < n) {
-                setMenuSlotPos(slotIdx, dx + SLOT_ROW_X, dy + SLOT_ROW_Y + i * ROW_STRIDE);
+                int sx = overlayX() - this.leftPos + Math.round(SLOT_ROW_X * s);
+                int sy = overlayY() - this.topPos + Math.round((SLOT_ROW_Y + i * ROW_STRIDE) * s);
+                setMenuSlotPos(slotIdx, sx, sy);
             } else {
                 setMenuSlotPos(slotIdx, -1000, -1000);
             }
         }
+    }
+
+    /**
+     * The base consumes every click inside the popup panel, so a click on a popup slot never
+     * reaches vanilla slot handling — and the follow-up release used to fall through to the
+     * base, which treated it as a quick-craft end and threw the carried item. Same cure as
+     * TSU's announcement popup: hit-test the popup slots first and issue the click directly,
+     * then swallow the matching release.
+     */
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (showSchedule && button >= 0 && button <= 2) {
+            positionScheduleSlots();   // fresh positions even right after opening / dragging the popup
+            Slot slot = hoveredPlaylistSlot(mouseX, mouseY);
+            if (slot != null) {
+                net.minecraft.world.inventory.ClickType type;
+                if (hasShiftDown()) {
+                    type = net.minecraft.world.inventory.ClickType.QUICK_MOVE;
+                } else if (button == 2 && this.minecraft != null && this.minecraft.player != null
+                        && this.minecraft.player.getAbilities().instabuild) {
+                    type = net.minecraft.world.inventory.ClickType.CLONE;
+                } else {
+                    type = net.minecraft.world.inventory.ClickType.PICKUP;
+                }
+                this.slotClicked(slot, slot.index, button, type);
+                return true;
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /** Release over a popup slot: the click already ran on press, so the release is a no-op. */
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (showSchedule && button >= 0 && button <= 2
+                && hoveredPlaylistSlot(mouseX, mouseY) != null) {
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    /** The active playlist slot under the raw mouse position, or null. */
+    private Slot hoveredPlaylistSlot(double mouseX, double mouseY) {
+        for (int i = 0; i < PlaybackDeviceBlockEntity.MAX_ENTRIES; i++) {
+            int slotIdx = PlaybackDeviceMenu.PLAYLIST_MENU_BASE + i;
+            if (slotIdx >= this.menu.slots.size()) break;
+            Slot slot = this.menu.slots.get(slotIdx);
+            if (!slot.isActive() || slot.x < -500) continue;
+            if (this.isHovering(slot.x, slot.y, 16, 16, mouseX, mouseY)) return slot;
+        }
+        return null;
     }
 
     private void hideScheduleSlots() {
@@ -387,25 +533,26 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     private void renderScheduleOverlayItems(GuiGraphics g, int mouseX, int mouseY) {
         // Hold off until the popup has finished scaling in, so items don't float before the panel.
         if (scheduleOpenedAtNanos > 0 && System.nanoTime() - scheduleOpenedAtNanos < OPEN_ANIM_NS) return;
-        g.pose().pushPose();
-        g.pose().translate(0, 0, 700);
+        float s = dialogScale();
         for (int i = 0; i < PlaybackDeviceBlockEntity.MAX_ENTRIES; i++) {
             int slotIdx = PlaybackDeviceMenu.PLAYLIST_MENU_BASE + i;
             if (slotIdx >= this.menu.slots.size()) break;
             Slot slot = this.menu.slots.get(slotIdx);
             if (!slot.isActive() || slot.x < -500) continue;
-            int sx = this.leftPos + slot.x;
-            int sy = this.topPos + slot.y;
+            g.pose().pushPose();
+            // Slot coords are raw screen offsets (see positionScheduleSlots); only the size scales.
+            g.pose().translate(this.leftPos + slot.x, this.topPos + slot.y, 700);
+            g.pose().scale(s, s, 1f);
             if (this.isHovering(slot.x, slot.y, 16, 16, mouseX, mouseY)) {
-                g.fillGradient(sx, sy, sx + 16, sy + 16, 0x80FFFFFF, 0x80FFFFFF);
+                g.fillGradient(0, 0, 16, 16, 0x80FFFFFF, 0x80FFFFFF);
             }
             ItemStack stack = slot.getItem();
             if (!stack.isEmpty()) {
-                g.renderItem(stack, sx, sy);
-                g.renderItemDecorations(this.font, stack, sx, sy);
+                g.renderItem(stack, 0, 0);
+                g.renderItemDecorations(this.font, stack, 0, 0);
             }
+            g.pose().popPose();
         }
-        g.pose().popPose();
     }
 
     @Override

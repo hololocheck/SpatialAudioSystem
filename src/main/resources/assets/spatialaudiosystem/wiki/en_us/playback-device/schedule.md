@@ -15,8 +15,9 @@ The editor for playing **several media in order** from a [Playback Device](../pl
 ## How to open
 
 1. Right-click the [Playback Device](../playback-device.md) to open it
-2. Click **♪ Schedule** — the schedule opens beside the main screen
-3. Your inventory stays reachable while it is open, so you can drag media straight into the rows
+2. Turn the **schedule toggle on** — the media slot gets a ✕ and the ♪ button arms
+3. Click **♪ Schedule** — the schedule opens beside the main screen
+4. Your inventory stays reachable while it is open, so you can drag media straight into the rows
 
 ## Operation
 
@@ -24,6 +25,7 @@ The editor for playing **several media in order** from a [Playback Device](../pl
 |---|---|
 | Add an entry | Click **+ Add Entry** |
 | Assign audio | Drag a recording medium from your inventory into the **slot at the right of the row** |
+| Assign it quickly | **Shift-click** a recording medium — it lands in the first free row |
 | Change the play count | **Hover the count (×N) and use the mouse wheel** |
 | Reorder | The **▲ / ▼** at the left of the row |
 | Preview one row | The row's **▶** |

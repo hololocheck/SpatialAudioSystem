@@ -336,13 +336,24 @@ public class AudioManager {
                 linearFactor = (float) Math.max(0.0, factorX * factorY * factorZ);
             }
         } else {
-            // No range defined: distance-based from device
+            // No range defined: distance from the device itself.
             double dx = px - (playback.getPos().getX() + 0.5);
             double dy = py - (playback.getPos().getY() + 0.5);
             double dz = pz - (playback.getPos().getZ() + 0.5);
-            float maxSearchDistance = 160.0f;
-            float distFactor = (float) Math.sqrt(dx * dx + dy * dy + dz * dz) / maxSearchDistance;
-            linearFactor = 1.0f - Math.min(1.0f, Math.max(0.0f, distFactor));
+            double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (playback.isAttenuationMode()) {
+                // Attenuation on: fade over the device's configured range (the server fills
+                // the ranges array with it when no board is inserted). This branch used to
+                // ignore the mode entirely and always fall through to the 160-block curve,
+                // which at normal distances is inaudible - the toggle appeared to do nothing.
+                int[] ranges = playback.getAttenuationRanges();
+                int range = (ranges != null && ranges.length > 0) ? ranges[0] : 8;
+                linearFactor = range <= 0 ? 0.0f : (float) Math.max(0.0, 1.0 - dist / range);
+            } else {
+                // Attenuation off: the old gentle ambient falloff.
+                float maxSearchDistance = 160.0f;
+                linearFactor = 1.0f - Math.min(1.0f, Math.max(0.0f, (float) dist / maxSearchDistance));
+            }
         }
 
         applyGain(playback, linearFactor);

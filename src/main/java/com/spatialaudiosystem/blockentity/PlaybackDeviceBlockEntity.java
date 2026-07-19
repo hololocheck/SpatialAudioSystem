@@ -86,6 +86,8 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private int entryCount = 0;
     /** Entry the scheduler is currently playing, for the playing-frame highlight (-1 = none). Transient. */
     private int playingEntry = -1;
+    /** Schedule mode: the playlist editor is armed and the single-play media slot is barred. */
+    private boolean scheduleMode = false;
     private java.util.UUID ownerUUID = null;   // first player to open this device
     private String ownerName = null;
     private boolean privateMode = false;       // private = owner only (OwnerAccess ring red)
@@ -203,6 +205,16 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         playCounts[b] = pc;
         markUpdated();
         return true;
+    }
+
+    public boolean isScheduleMode() {
+        return scheduleMode;
+    }
+
+    /** Flips schedule mode. While on, the media slot refuses items and shift-clicks feed the playlist. */
+    public void toggleScheduleMode() {
+        scheduleMode = !scheduleMode;
+        markUpdated();
     }
 
     public int getPlayingEntry() {
@@ -352,6 +364,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         tag.put("playlist", playlist.serializeNBT(registries));
         tag.putIntArray("playCounts", playCounts.clone());
         tag.putInt("entryCount", entryCount);
+        tag.putBoolean("scheduleMode", scheduleMode);
         tag.putBoolean("showRange", showRange);
         tag.putBoolean("isPlaying", isPlaying);
         tag.putBoolean("attenuationMode", attenuationMode);
@@ -390,6 +403,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         if (tag.contains("playlist")) playlist.deserializeNBT(registries, tag.getCompound("playlist"));
         loadPlayCounts(tag);
         loadEntryCount(tag);
+        scheduleMode = tag.getBoolean("scheduleMode");
         // Transient on disk (defaults -1); carries the playing-frame index on client update tags.
         playingEntry = tag.contains("playingEntry") ? tag.getInt("playingEntry") : -1;
         if (tag.hasUUID("OwnerUUID")) {
@@ -401,7 +415,8 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         privateMode = tag.getBoolean("PrivateMode");
         showRange = tag.getBoolean("showRange");
         isPlaying = tag.getBoolean("isPlaying");
-        attenuationMode = tag.getBoolean("attenuationMode");
+        // Missing key (legacy data) means the default ON, not false — same rule as TSU's config.
+        attenuationMode = !tag.contains("attenuationMode") || tag.getBoolean("attenuationMode");
         attenuationRange = tag.contains("attenuationRange") ? tag.getInt("attenuationRange") : 8;
         // Eagerly migrate legacy AUDIO_DATA to file-based storage on load (Fix 4)
         if (level != null && !level.isClientSide() && level.getServer() != null) {
@@ -447,6 +462,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         tag.putBoolean("attenuationMode", attenuationMode);
         tag.putInt("attenuationRange", attenuationRange);
         tag.putInt("entryCount", entryCount);
+        tag.putBoolean("scheduleMode", scheduleMode);     // client: ✕ lock + button arming
         tag.putInt("playingEntry", playingEntry);         // client: playing-frame highlight
         if (ownerUUID != null) tag.putUUID("OwnerUUID", ownerUUID);   // client: owner face
         tag.putBoolean("PrivateMode", privateMode);                   // client: ring colour

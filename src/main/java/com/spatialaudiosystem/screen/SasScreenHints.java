@@ -70,9 +70,12 @@ public final class SasScreenHints {
         HintRegistry.register("pb-range-label", "sas.hint.pb_showrange", WIKI_RANGE);
         HintRegistry.register("pb-range-track", "sas.hint.pb_showrange", WIKI_RANGE);
         HintRegistry.register("pb-range-knob", "sas.hint.pb_showrange", WIKI_RANGE);
+        HintRegistry.register("pb-sched-toggle-track", "sas.hint.sched_toggle", WIKI_SCHEDULE);
+        HintRegistry.register("pb-sched-toggle-knob", "sas.hint.sched_toggle", WIKI_SCHEDULE);
         HintRegistry.register("pb-sched-btn", "sas.hint.pb_sched", WIKI_SCHEDULE);
         HintRegistry.register("pb-media-slot", "sas.hint.pb_media_slot", WIKI_PLAYBACK);
         HintRegistry.register("pb-media-slot-label", "sas.hint.pb_media_slot", WIKI_PLAYBACK);
+        HintRegistry.register("pb-media-lock", "sas.hint.pb_media_slot", WIKI_PLAYBACK);
         HintRegistry.register("pb-range-slot", "sas.hint.pb_range_slot", WIKI_RANGE);
         HintRegistry.register("pb-range-slot-label", "sas.hint.pb_range_slot", WIKI_RANGE);
     }

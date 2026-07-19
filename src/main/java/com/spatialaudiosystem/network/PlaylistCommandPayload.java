@@ -28,6 +28,7 @@ public record PlaylistCommandPayload(BlockPos pos, int op, int a1, int a2) imple
     public static final int OP_ADD_ENTRY = 4;         // append a new empty entry
     public static final int OP_REMOVE_ENTRY = 5;      // a1 = entry index (media returned to player)
     public static final int OP_REORDER = 6;           // a1 = from, a2 = to
+    public static final int OP_TOGGLE_MODE = 7;       // flip schedule mode (bars/frees the media slot)
 
     public static final CustomPacketPayload.Type<PlaylistCommandPayload> TYPE =
             new CustomPacketPayload.Type<>(
@@ -54,7 +55,7 @@ public record PlaylistCommandPayload(BlockPos pos, int op, int a1, int a2) imple
         int op = buf.readInt();
         int a1 = buf.readInt();
         int a2 = buf.readInt();
-        if (op < OP_PLAY_ALL || op > OP_REORDER) {
+        if (op < OP_PLAY_ALL || op > OP_TOGGLE_MODE) {
             throw new DecoderException("Invalid playlist op: " + op);
         }
         if (a1 < 0 || a1 >= PlaybackDeviceBlockEntity.MAX_ENTRIES) {
@@ -89,6 +90,7 @@ public record PlaylistCommandPayload(BlockPos pos, int op, int a1, int a2) imple
                     }
                 }
                 case OP_REORDER -> be.swapEntries(payload.a1, payload.a2);
+                case OP_TOGGLE_MODE -> be.toggleScheduleMode();
                 default -> { }
             }
         });

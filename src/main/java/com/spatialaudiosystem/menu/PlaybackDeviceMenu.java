@@ -37,7 +37,8 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
         this.addSlot(new SlotItemHandler(handler, PlaybackDeviceBlockEntity.MEDIA_SLOT, 151, 49) {
             @Override
             public boolean mayPlace(ItemStack stack) {
-                return stack.is(ModItems.RECORDING_MEDIUM.get());
+                // Schedule mode bars single play: media goes to the playlist rows instead.
+                return stack.is(ModItems.RECORDING_MEDIUM.get()) && !blockEntity.isScheduleMode();
             }
         });
         this.addSlot(new SlotItemHandler(handler, PlaybackDeviceBlockEntity.RANGE_SLOT, 151, 30) {
@@ -55,10 +56,14 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
         // Playlist media slots (menu 38..43) — off-screen until the schedule popup positions them.
         ItemStackHandler playlist = blockEntity.getPlaylist();
         for (int i = 0; i < PlaybackDeviceBlockEntity.PLAYLIST_SIZE; i++) {
+            final int entry = i;
             this.addSlot(new SlotItemHandler(playlist, i, -1000, -1000) {
                 @Override
                 public boolean mayPlace(ItemStack stack) {
-                    return stack.is(ModItems.RECORDING_MEDIUM.get());
+                    // Only rows the editor actually shows take media, so a shift-click can
+                    // never park an item in an entry that does not exist yet.
+                    return stack.is(ModItems.RECORDING_MEDIUM.get())
+                            && entry < blockEntity.getEntryCount();
                 }
                 @Override
                 public boolean isActive() {
@@ -99,8 +104,13 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
                     return ItemStack.EMPTY;
                 }
             } else if (slotStack.is(ModItems.RECORDING_MEDIUM.get())) {
-                // Playlist entries are filled by dragging into the popup; shift-click targets media slot 0.
-                if (!this.moveItemStackTo(slotStack, PlaybackDeviceBlockEntity.MEDIA_SLOT,
+                if (blockEntity.isScheduleMode()) {
+                    // Schedule mode: shift-click feeds the first free playlist row, not the barred slot.
+                    if (!this.moveItemStackTo(slotStack, PLAYLIST_MENU_BASE,
+                            PLAYLIST_MENU_BASE + PlaybackDeviceBlockEntity.PLAYLIST_SIZE, false)) {
+                        return ItemStack.EMPTY;
+                    }
+                } else if (!this.moveItemStackTo(slotStack, PlaybackDeviceBlockEntity.MEDIA_SLOT,
                         PlaybackDeviceBlockEntity.MEDIA_SLOT + 1, false)) {
                     return ItemStack.EMPTY;
                 }
