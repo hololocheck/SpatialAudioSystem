@@ -58,10 +58,15 @@ dependencies {
 
     // Manta UI library. Compile against the readable jar for full signatures; ship the
     // obfuscated one embedded (jarJar), so a user running several BelugaLab mods loads a
-    // single Manta - the newest that satisfies every mod's range.
-    compileOnly files("../manta/build/libs/manta-1.0.7.jar")
-    jarJar(implementation("com.manta:manta:[1.0.2,2)")) {
-        version { prefer "1.0.7" }
+    // single Manta — some candidate in every mod's range intersection (JarJar does NOT
+    // guarantee the newest). Floor = the EMBEDDED version (manta_version in
+    // gradle.properties, the single source for range/prefer/jar path/mods.toml): with
+    // every consumer declaring [embedded,2), older embedded Mantas fall out of the
+    // intersection and the newest one wins deterministically; older mods then run on it
+    // via Manta's <2.0 binary compatibility.
+    compileOnly files("../manta/build/libs/manta-${manta_version}.jar")
+    jarJar(implementation("com.manta:manta:[${manta_version},2)")) {
+        version { prefer manta_version }
     }
 
     // Unit-test infrastructure. Mirrors the Manta repo's setup.
@@ -102,6 +107,15 @@ tasks.register('allJar', Copy) {
     rename { "${base.archivesName.get()}-${version}-all.jar" }
 }
 tasks.named('build') { dependsOn 'allJar' }
+
+// Expand ${manta_version} in mods.toml from gradle.properties, keeping the required
+// range in lockstep with the embedded Manta.
+tasks.withType(ProcessResources).configureEach {
+    inputs.property 'manta_version', manta_version
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand manta_version: manta_version
+    }
+}
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
