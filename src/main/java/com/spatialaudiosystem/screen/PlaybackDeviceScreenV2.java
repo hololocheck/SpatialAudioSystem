@@ -449,13 +449,15 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
      * frames when the dialog is auto-scaled or resized.
      */
     private void positionScheduleSlots() {
-        float s = dialogScale();
         int n = be().getEntryCount();
         for (int i = 0; i < PlaybackDeviceBlockEntity.MAX_ENTRIES; i++) {
             int slotIdx = PlaybackDeviceMenu.PLAYLIST_MENU_BASE + i;
             if (i < n) {
-                int sx = overlayX() - this.leftPos + Math.round(SLOT_ROW_X * s);
-                int sy = overlayY() - this.topPos + Math.round((SLOT_ROW_Y + i * ROW_STRIDE) * s);
+                // Manta owns the overlay transform (origin-pivot scale); go through its API
+                // instead of hand-rolling origin + scale, which is easy to get subtly wrong.
+                int sx = Math.round(overlayLocalToScreenX(SLOT_ROW_X)) - this.leftPos;
+                int sy = Math.round(overlayLocalToScreenY(SLOT_ROW_Y + i * ROW_STRIDE))
+                        - this.topPos;
                 setMenuSlotPos(slotIdx, sx, sy);
             } else {
                 setMenuSlotPos(slotIdx, -1000, -1000);
@@ -509,9 +511,27 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             if (slotIdx >= this.menu.slots.size()) break;
             Slot slot = this.menu.slots.get(slotIdx);
             if (!slot.isActive() || slot.x < -500) continue;
-            if (this.isHovering(slot.x, slot.y, 16, 16, mouseX, mouseY)) return slot;
+            if (isOverScheduleSlot(slot, mouseX, mouseY)) return slot;
         }
         return null;
+    }
+
+    /**
+     * Hit-test a popup slot against the size it is actually drawn at.
+     *
+     * <p>{@link #renderScheduleOverlayItems} draws a 16×16 slot inside {@code scale(s)}, so the
+     * visible slot is {@code 16 * s} px. Vanilla's {@code isHovering} only tests a fixed 16×16 box,
+     * which leaves the outer ring unhighlighted and unclickable whenever the dialog is scaled up.
+     * The scale source is Manta's overlay transform (see {@code JsonLayoutScreen.overlayScale()});
+     * we read the same {@code dialogScale()} the drawing uses so visual and hit area cannot diverge.
+     */
+    private boolean isOverScheduleSlot(Slot slot, double mouseX, double mouseY) {
+        float s = dialogScale();
+        float x0 = this.leftPos + slot.x;
+        float y0 = this.topPos + slot.y;
+        float size = 16f * s;
+        return mouseX >= x0 && mouseX < x0 + size
+                && mouseY >= y0 && mouseY < y0 + size;
     }
 
     private void hideScheduleSlots() {
@@ -543,7 +563,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             // Slot coords are raw screen offsets (see positionScheduleSlots); only the size scales.
             g.pose().translate(this.leftPos + slot.x, this.topPos + slot.y, 700);
             g.pose().scale(s, s, 1f);
-            if (this.isHovering(slot.x, slot.y, 16, 16, mouseX, mouseY)) {
+            if (isOverScheduleSlot(slot, mouseX, mouseY)) {
                 g.fillGradient(0, 0, 16, 16, 0x80FFFFFF, 0x80FFFFFF);
             }
             ItemStack stack = slot.getItem();
