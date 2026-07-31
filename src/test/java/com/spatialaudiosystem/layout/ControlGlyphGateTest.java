@@ -58,7 +58,12 @@ class ControlGlyphGateTest {
             "✎",              // edit
             "✓", "✔",         // 確定
             // 第 2 波 (2026-07-26): 再生装置の停止 ■ / 録音 ● がここに無く見逃していた。
-            "⏸", "⏹"         // 一時停止 / 停止
+            "⏸", "⏹",        // 一時停止 / 停止
+            // 第 3 波 (2026-07-26 / 6 つめの盲点): 異体字が丸ごと漏れていた。
+            // ▼(U+25BC) は入っていたが ▾(U+25BE) は無い。用途が同じなら異体字も入れる。
+            "▾", "▴", "▸", "◂",
+            // wiki / help 導線の emoji (R4.17.2/3 の名残)。用途は navigation control。
+            "📖"
     );
 
     /**
@@ -165,6 +170,14 @@ class ControlGlyphGateTest {
 
         assertTrue(stringLiterals("String s = \"×\"; // 16×14").equals(List.of("×")));
         assertTrue(stringLiterals("String u = \"http://a/b\";").equals(List.of("http://a/b")));
+
+        // **unicode escape も復号する** (2026-07-26 / 5 つめの盲点)。
+        // 復号しない実装ではリテラルが "u2714" になり control glyph に見えない。
+        assertTrue(stringLiterals("String s = \"\\u2714\";").equals(List.of("✔")));
+        assertTrue(stringLiterals("String s = \"\\u2261 目次\";").equals(List.of("≡ 目次")));
+        assertTrue(stringLiterals("String s = \"\\uuu2716\";").equals(List.of("✖")));
+        assertTrue(stringLiterals("String s = \"\\u2714OK\";").equals(List.of("✔OK")));
+        assertTrue(stringLiterals("String s = \"a\\nb\";").equals(List.of("anb")));
     }
 
     @Test
@@ -212,7 +225,15 @@ class ControlGlyphGateTest {
         return !Character.isDigit(rest.charAt(0));
     }
 
-    /** Java ソースから文字列リテラルの中身だけを取り出す (comment / char literal は除外)。 */
+    /**
+     * Java ソースから文字列リテラルの中身だけを取り出す (comment / char literal は除外)。
+     *
+     * <p><b>unicode escape は復号する</b> (2026-07-26 / 5 つめの盲点)。{@code "✔"} は
+     * ソース上 6 文字だがコンパイル後は {@code ✔} 1 文字で、生のまま読むと {@code u2714} に
+     * 見え control glyph として検出できない。JSON を regex で読んで {@code "×"} を
+     * 取りこぼしたのと同型の穴で、manta 2 file・TSU 2 file が不可視だった。SAS には
+     * 現状 escape 記法の該当が無いが、<b>gate が見ていない repo は「0 件」の根拠にならない</b>。
+     */
     private static List<String> stringLiterals(String src) {
         List<String> out = new ArrayList<>();
         final int CODE = 0, STR = 1, CHR = 2, LINE = 3, BLOCK = 4;
@@ -229,7 +250,18 @@ class ControlGlyphGateTest {
                     else if (c == '/' && next == '*') { state = BLOCK; i++; }
                 }
                 case STR -> {
-                    if (c == '\\') { if (cur != null) cur.append(next); i++; }
+                    if (c == '\\') {
+                        int end = unicodeEscapeEnd(src, i);
+                        if (end > 0) {
+                            if (cur != null) {
+                                cur.append((char) Integer.parseInt(src.substring(end - 4, end), 16));
+                            }
+                            i = end - 1;
+                        } else {
+                            if (cur != null) cur.append(next);
+                            i++;
+                        }
+                    }
                     else if (c == '"') { out.add(cur.toString()); cur = null; state = CODE; }
                     else if (cur != null) cur.append(c);
                 }
@@ -243,5 +275,19 @@ class ControlGlyphGateTest {
             }
         }
         return out;
+    }
+
+    /**
+     * {@code src[i]} が {@code \}{@code uXXXX} の開始なら 4 桁 hex 直後の index、
+     * そうでなければ -1。JLS は {@code u} の連続も認めるのでまとめて読み飛ばす。
+     */
+    private static int unicodeEscapeEnd(String src, int i) {
+        int u = i + 1;
+        while (u < src.length() && src.charAt(u) == 'u') u++;
+        if (u == i + 1 || u + 4 > src.length()) return -1;
+        for (int k = u; k < u + 4; k++) {
+            if (Character.digit(src.charAt(k), 16) < 0) return -1;
+        }
+        return u + 4;
     }
 }
