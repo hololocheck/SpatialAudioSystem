@@ -2,6 +2,46 @@
 
 > Japanese version: [CHANGELOG.md](CHANGELOG.md)
 
+## [1.0.5] - 2026-08-01
+
+### Major Changes
+
+- **Every screen rebuilt on Manta UI**
+  The Playback Device and Memory Device screens are now rendered through the BelugaExperience design workflow on the Manta UI runtime. The old GUI textures have been removed.
+- **Manta is bundled in the jar (jar-in-jar)**
+  Manta 1.1.12 ships embedded and is declared a required dependency. You do not need to install Manta separately.
+
+### Added
+
+- **♪ Schedule (playlist)**
+  An editor for playing several recording media in order from a Playback Device. Up to 6 entries, each repeating 1–10 times. Drag a medium from your inventory onto a row's slot, or shift-click to drop it into the first free row. Reorder with ▲ / ▼, preview a row with its ▶, remove it with ✕ (the medium is handed back). **▶ Play All** runs the sequence; the row currently sounding is outlined and the outline moves along as it advances. Change a play count by hovering it and scrolling.
+- **In-game wiki**
+  The **📖** button on any screen opens the page for that screen. With hints on, hovering an element and pressing **F1** jumps straight to that feature's page. Five pages, in English and Japanese.
+- **Hint mode**
+  A toggle in the top-right of each screen. With it on, hovering an element shows its description in the lower left.
+- **Cover art (jacket) display**
+  Artwork embedded in an audio file is shown on the Memory Device and Playback Device screens. JPEG jackets decode through Manta's image decoder.
+- **Access mode (public / private)**
+  The first player to open a device becomes its owner. The face icon switches between public (green) and private (red); while private, nobody but the owner can open it.
+- **Range Board HUD**
+  Holding the board shows a HUD at the bottom of the screen. **Alt + wheel** cycles the mode; **Ctrl or Shift + wheel** adjusts the current mode's value (outside Normal range mode). The wheel has a 180 ms cooldown so one flick does not fire repeatedly.
+- **Recording error feedback**
+  Write failures on the Memory Device are now surfaced on screen.
+
+### Bug Fixes
+
+- **Fixed world assets from 1.0.3 or earlier not being recognized**
+  The 1.0.4 rename changed only the namespace, so blocks in chunks, items in inventories, block entity types, menus, and the data components carrying the audio id all still named a mod that no longer existed. Registry aliases now map the legacy id (`stationsoundsystem`) onto the current one, and `AudioStorage` falls back to the old directory (`<world>/stationsoundsystem_audio/`). **Recording media, playback devices, and range boards from 1.0.3 or earlier work as-is** — the 1.0.4 note about needing a fresh world no longer applies.
+
+### Improvements
+
+- Added a playback session registry and scheduler, centralising playback start / stop / completion notification.
+- Added playback timeout handling.
+- Hardened input validation on playlist command packets.
+- General hardening across audio storage, networking, and audio processing.
+- Replaced control glyphs with Manta icons.
+- Added a unit test suite (52 tests).
+
 ## [1.0.4] - 2026-05-05
 
 ### Major Change (Mod rename / ID change)

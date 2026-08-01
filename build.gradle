@@ -6,7 +6,7 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.42-beta'
 }
 
-version = '1.0.4'
+version = '1.0.5'
 group = 'com.spatialaudiosystem'
 
 repositories {
@@ -109,11 +109,14 @@ tasks.register('allJar', Copy) {
 tasks.named('build') { dependsOn 'allJar' }
 
 // Expand ${manta_version} in mods.toml from gradle.properties, keeping the required
-// range in lockstep with the embedded Manta.
+// range in lockstep with the embedded Manta. ${mod_version} comes from the build's own
+// version so the declared version cannot drift from the jar's filename — a hardcoded
+// literal here once shipped a jar named 1.0.6 that declared 1.0.5.
 tasks.withType(ProcessResources).configureEach {
     inputs.property 'manta_version', manta_version
+    inputs.property 'mod_version', project.version.toString()
     filesMatching('META-INF/neoforge.mods.toml') {
-        expand manta_version: manta_version
+        expand manta_version: manta_version, mod_version: project.version.toString()
     }
 }
 
