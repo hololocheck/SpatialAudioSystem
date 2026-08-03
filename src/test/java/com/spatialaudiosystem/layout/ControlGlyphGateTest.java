@@ -131,6 +131,78 @@ class ControlGlyphGateTest {
         }
     }
 
+    // ===== 経路 3: lang JSON =====
+    //
+    // この gate は 2026-08-03 まで lang を一度も走査していなかった。経路は layout JSON と
+    // Java literal の 2 つだけで、UI 文字列の大半が居る lang は構造的に見えていない —
+    // つまり「gate が緑」は lang に control glyph が無い根拠に一度もなっていなかった。
+    // manta / TSU / SAS の 3 repo すべてに同じ穴があり、同じ形で塞ぐ (グローバル §7)。
+
+    /**
+     * <b>lang 繰り延べ台帳</b> — {@code (lang file, key)}。
+     *
+     * <p>台帳は「今あるものを許す」ためではなく<b>新規追加を赤にする</b>ためにある。
+     * ここに無い key が glyph を持てば fail し、ここにある key が直っても fail する
+     * ({@link #langLedgerHasNoStaleEntry}) — 直った key を残すと、その key への
+     * 再導入が黙って通るため。
+     */
+    private static final Map<String, Set<String>> LANG_DEFERRED = Map.of(
+            // ▶ = 「連続再生」ボタンのラベル。text と glyph が 1 つの文字列に混ざって
+            //     いるので icon 化には layout の分割と座標再配置が要る。
+            "en_us.json", Set.of("gui.spatialaudiosystem.btn_play_all"),
+            "ja_jp.json", Set.of("gui.spatialaudiosystem.btn_play_all"));
+
+    private static Map<String, Set<String>> langViolations() throws IOException {
+        Path dir = locate("src/main/resources/assets/spatialaudiosystem/lang");
+        Map<String, Set<String>> out = new java.util.TreeMap<>();
+        try (Stream<Path> files = Files.walk(dir)) {
+            for (Path p : files.filter(f -> f.toString().endsWith(".json")).toList()) {
+                JsonObject o = JsonParser.parseString(
+                        Files.readString(p, StandardCharsets.UTF_8)).getAsJsonObject();
+                for (String key : o.keySet()) {
+                    JsonElement v = o.get(key);
+                    if (!v.isJsonPrimitive() || !v.getAsJsonPrimitive().isString()) continue;
+                    if (isControlGlyphUse(v.getAsString())) {
+                        out.computeIfAbsent(p.getFileName().toString(),
+                                k -> new java.util.TreeSet<>()).add(key);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    @Test
+    @DisplayName("**lang に台帳外の control glyph が無い**")
+    void langRespectsLedger() throws IOException {
+        List<String> unexpected = new ArrayList<>();
+        langViolations().forEach((file, keys) -> {
+            Set<String> allowed = LANG_DEFERRED.getOrDefault(file, Set.of());
+            for (String key : keys) {
+                if (!allowed.contains(key)) unexpected.add(file + " : " + key);
+            }
+        });
+        assertTrue(unexpected.isEmpty(),
+                "control glyph は icon ノードへ。繰り延べるなら理由を添えて "
+                        + "LANG_DEFERRED へ: " + unexpected);
+    }
+
+    @Test
+    @DisplayName("**lang 台帳に stale entry が無い** — 直した key は台帳からも消す")
+    void langLedgerHasNoStaleEntry() throws IOException {
+        Map<String, Set<String>> actual = langViolations();
+        List<String> stale = new ArrayList<>();
+        LANG_DEFERRED.forEach((file, keys) -> {
+            Set<String> now = actual.getOrDefault(file, Set.of());
+            for (String key : keys) {
+                if (!now.contains(key)) stale.add(file + " : " + key);
+            }
+        });
+        assertTrue(stale.isEmpty(),
+                "既に clean なのに台帳に残っている — 消さないとその key への"
+                        + "再導入が黙って通る: " + stale);
+    }
+
     // ===== 経路 2: Java 文字列リテラル =====
 
     @Test
