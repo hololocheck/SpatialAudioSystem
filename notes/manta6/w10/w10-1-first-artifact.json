@@ -1,0 +1,69 @@
+{
+  "schema": "manta6-w10-1-artifacts/2",
+  "producedOn": "2026-08-10",
+  "which": "all 4 of W10-1's first-party UIs",
+  "file": "notes/manta6/w10/manta-standard-dialog-r4.json",
+  "revision": 4,
+  "hash": "a09f7197aa7ecfc47809ae42ef4e7f487b1168122cc7298184521429c2d4ca51",
+  "hashCheck": "Each saved file's SHA-256 was recomputed independently and equals the revision hash the page printed. That is W10-2's comparison - browser export hash against the hash of what the consumer received - with both sides present for all four.",
+  "howItWasAuthored": [
+    "document.import seeded the skeleton: a 320x200 root, a title span, three field rows and two buttons",
+    "authoring.align left on the three field rows - REFUSED 'already aligned - an empty transaction would still be a history entry'",
+    "authoring.distribute y on the three rows - REFUSED 'already distributed'",
+    "authoring.align top on the two buttons - APPLIED, revision 1",
+    "authoring.bind nd2 text st.dialogTitle - APPLIED, revision 2",
+    "authoring.action nd6 click ac.confirm - APPLIED, revision 3",
+    "authoring.action nd7 click ac.cancel - APPLIED, revision 4",
+    "document.export / the canonical bytes region - the file above"
+  ],
+  "twoRefusalsAreTheInterestingPart": "align and distribute refused because the seeded rows were already aligned and already evenly spaced, and the reason given is that an empty transaction would still be a history entry. That is the layer declining to make a no-op edit, which is what W4's exit counts - and it is the first time either refusal has been seen from the shell, because until today nothing called them.",
+  "remaining": "Placing them into Manta, TSU and SAS and running W10-2's build/deploy/actual test. The artifacts and the hash check exist; what is left is consumer work.",
+  "artifacts": [
+    {
+      "n": 1,
+      "what": "Manta standard dialog/form",
+      "file": "notes/manta6/w10/manta-standard-dialog-r4.json",
+      "revision": 4,
+      "hash": "a09f7197aa7ecfc47809ae42ef4e7f487b1168122cc7298184521429c2d4ca51",
+      "authored": "align top on the buttons, bind the title, two click actions"
+    },
+    {
+      "n": 2,
+      "what": "TSU 36-slot screen",
+      "file": "notes/manta6/w10/tsu-36-slot-screen-r2.json",
+      "revision": 2,
+      "hash": "358c3e966836cd2a9bec79e2b4903170e5e78ab2eea5368a88cd411136a69dee",
+      "authored": "align top across a row and left down a column (both refused as already aligned), bind visible, attach click"
+    },
+    {
+      "n": 3,
+      "what": "TSU responsive settings / data list",
+      "file": "notes/manta6/w10/tsu-responsive-settings-r2.json",
+      "revision": 2,
+      "hash": "9a3332c0c49665d65219ff04dc5c400efc104f43c90dc73123359ebb7dc0ebfa",
+      "authored": "distribute y over five rows (refused as already distributed), bind the title, bind a scroll offset on the root"
+    },
+    {
+      "n": 4,
+      "what": "SAS playback / recording rows",
+      "file": "notes/manta6/w10/sas-playback-rows-r3.json",
+      "revision": 3,
+      "hash": "2de13e6ad88972d7ae439c3474a715bf3273875cdecb45d2545ec2560e75d028",
+      "authored": "align left over four rows (refused as already aligned), bind the title, attach a play toggle, bind the recording indicator's visibility"
+    }
+  ],
+  "gapsTheseArtifactsShow": [
+    {
+      "what": "THE PANEL CANNOT CREATE A NODE.",
+      "detail": "select, set, duplicate, group, align, distribute, bind and action all operate on nodes that already exist. duplicate needs something to copy. So the skeleton had to come from document.import, and W5's palette - the half that inserts - is not built. Node creation through the sanctioned surface still means a hand-written insert transaction."
+    },
+    {
+      "what": "THE BOUND TITLE IS NOT IN THE MANIFEST.",
+      "detail": "The compiled program reports 'state dependencies 0' for this artifact even though nd2 carries textKey st.dialogTitle. That is the bind-text defect recorded earlier today - KEY_PHASES has no textKey, text dynamism goes through the classes mechanism - and here it is in a real artifact rather than a probe: a dialog whose title would freeze at build."
+    },
+    {
+      "what": "THREE OF THE FOUR LAYOUT CALLS WERE REFUSED AS NO-OPS.",
+      "detail": "align and distribute declined on already-aligned and already-distributed selections, saying an empty transaction would still be a history entry. Correct, and it means these four artifacts exercise BIND and ACTION heavily and the geometry operations barely - a seeded skeleton is already tidy. Authoring that actually moves boxes needs the palette, or a skeleton deliberately left crooked."
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "manta6-w10-2-state/1",
+  "measuredOn": "2026-08-10",
+  "doneWithoutDeploying": {
+    "what": "All four W10-1 artifacts lower cleanly through the ES executor.",
+    "results": [
+      {
+        "file": "manta-standard-dialog-r4",
+        "nodes": 7,
+        "stateDependencies": 0,
+        "hitSemantic": 7
+      },
+      {
+        "file": "tsu-36-slot-screen-r2",
+        "nodes": 37,
+        "stateDependencies": 1,
+        "hitSemantic": 37
+      },
+      {
+        "file": "tsu-responsive-settings-r2",
+        "nodes": 7,
+        "stateDependencies": 1,
+        "hitSemantic": 7
+      },
+      {
+        "file": "sas-playback-rows-r3",
+        "nodes": 6,
+        "stateDependencies": 1,
+        "hitSemantic": 6
+      }
+    ],
+    "whatTheDepCountsSay": "The dialog binds a title and reports ZERO state dependencies; the settings screen binds a title AND a scroll offset and reports ONE. Both are the bind-text defect recorded earlier today - KEY_PHASES has no textKey, so a bound title reaches the document and not the manifest. Four real artifacts, and the only bindings that survive lowering are the non-text ones."
+  },
+  "notDone": {
+    "placement": "The four files are not in Manta, TSU or SAS. There is no established home for a workbench-generated layout in the consumers, and CLAUDE.md warns against touching TSU's layouts/*.json from a generator - so where they land is a decision, not a mechanical copy.",
+    "buildDeployActualTest": "W10-2 wants both jars built and deployed to PrismLauncher 1.21.1(1), plus a dedicated-server run, resource reload, GUI scale, locale, shader-mod and disconnect/reopen. Deploying overwrites jars under a client that may be running and restarting VM-A kicks whoever is on it, so it was left for the user to authorise. Asked, not answered.",
+    "runtimeHashComparison": "The browser side of 'browser export hash == loaded runtime program hash' exists for all four - each file's SHA-256 equals the revision hash the page printed. The runtime side needs the jars deployed."
+  },
+  "progress2026_08_10_deploy": {
+    "clientWasNotRunning": "Checked as a standalone command before anything else, per the deploy procedure: zero javaw processes. The four java processes were all gradle - two daemons, a worker, and one carrying -Dmanta.consumerCorpus=absent. So there was no client to stop.",
+    "mantaBuilt": "gradlew obfuscate produced build/libs/manta-1.1.70-obfuscated.jar. TSU and SAS both pin manta_version 1.1.70, so the artifact matches what they embed.",
+    "BLOCKER_FOUND": {
+      "what": "THE PLACEMENT AND THE RUNTIME COMPARISON ARE IN TENSION, and the placement decision settles it against the comparison. /manta6 lab compile takes a RESOURCE ID - Manta6Lab.java line 119, a greedy string argument resolved as a resource - and the four artifacts live in notes/manta6/w10/, which is not on any resource path. Nothing in the runtime can be pointed at them.",
+      "soWhatIsAndIsNotVerifiable": "The browser half of W10-2's hash comparison is done for all four: each file's SHA-256 equals the revision hash the page printed. The runtime half cannot run at all while the files sit in notes/ - not because a build is missing, but because the loader has no path to them.",
+      "andTheJarsWouldNotChange": "Worth stating plainly: today's Manta changes are all in browser-workbench/ and notes/, neither of which is packaged, and the consumer changes are notes-only. A rebuilt TSU or SAS jar would carry the same shipped bytes as the deployed one. Deploying would prove nothing about these four artifacts.",
+      "whatWouldMakeItVerifiable": "Either add the four documents as resources in the consumers - the option that was weighed and not chosen, because it also needs Screen registration and an opening trigger in consumer Java - or give the lab a compile-from-file path so a document outside the resource tree can be lowered and its program hash printed. The second is smaller and is a Manta-side change, which is where W10's subject lives."
+    }
+  }
+}
