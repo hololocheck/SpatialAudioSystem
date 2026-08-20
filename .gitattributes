@@ -1,17 +1,20 @@
 # Asset bytes are content-addressed by Manta, so a checkout must not rewrite them.
 #
 # manta6_corpus_baseline.collect_assets walks assets/<modid> with NO extension
-# filter and sha256s every file it finds, and manta6_authoring_baseline
-# fingerprints every layouts/*.json by the sha256 of its bytes. Both run over
-# THIS repository from the manta workspace, so a line-ending conversion here
-# moves a number over there.
+# filter and sha256s every file it finds. That ledger is where this repository is
+# actually exposed: 37 of its 40 tracked asset files contain line endings and so
+# convert - blockstates, lang, models, wiki/*.md, wiki/index.json.
 #
-# PREVENTIVE here, unlike Trainsystemutilities. Measured 2026-08-20: all 40 of
-# this repo's tracked asset files still match their own commits byte for byte,
-# where TSU had 192 of 486 differing by line endings alone. That is luck, not
-# protection - core.autocrlf is true on this machine (global and system), so the
-# next fresh clone would check these out as CRLF and move manta's frozen
-# SpatialAudioSystem fingerprint 29c28419 with nothing here saying otherwise.
+# NOT the authoring fingerprint, which is what this comment claimed when it was
+# first written. Measured 2026-08-20 after a second reading refuted it: all three
+# of this repo's layout JSONs are minified onto a single line and contain zero
+# line endings, so no conversion can move 29c28419 - a fresh clone with
+# core.autocrlf=true was measured to reproduce it exactly. That sentence was
+# inferred from Trainsystemutilities, where two layout files DO convert and the
+# fingerprint really had moved. Corrected here rather than left, because this is
+# the file a third consumer's .gitattributes gets copied from.
 #
-# The same lesson is written in manta's own .gitattributes for its icon SVGs.
+# The same lesson is written in manta's own .gitattributes for its icon SVGs,
+# and enumerated there by reading the code that hashes rather than by recalling
+# which directories matter - extending that list by hand missed twelve files.
 src/*/resources/assets/spatialaudiosystem/** -text
