@@ -1,0 +1,17 @@
+# Asset bytes are content-addressed by Manta, so a checkout must not rewrite them.
+#
+# manta6_corpus_baseline.collect_assets walks assets/<modid> with NO extension
+# filter and sha256s every file it finds, and manta6_authoring_baseline
+# fingerprints every layouts/*.json by the sha256 of its bytes. Both run over
+# THIS repository from the manta workspace, so a line-ending conversion here
+# moves a number over there.
+#
+# PREVENTIVE here, unlike Trainsystemutilities. Measured 2026-08-20: all 40 of
+# this repo's tracked asset files still match their own commits byte for byte,
+# where TSU had 192 of 486 differing by line endings alone. That is luck, not
+# protection - core.autocrlf is true on this machine (global and system), so the
+# next fresh clone would check these out as CRLF and move manta's frozen
+# SpatialAudioSystem fingerprint 29c28419 with nothing here saying otherwise.
+#
+# The same lesson is written in manta's own .gitattributes for its icon SVGs.
+src/*/resources/assets/spatialaudiosystem/** -text
