@@ -1,3 +1,21 @@
+# A checkout must not rewrite this repository. `*` comes first; the entry below
+# is kept for the reason it records, not because it is still doing work.
+#
+# 2026-08-22: the rule this file was written under was "files whose bytes are
+# hashed by a gate". That predicate was too narrow - a gate reading source as
+# raw text and deciding with a regex is affected too, and one in manta was
+# (see manta/.gitattributes for the case). Widening the list would have left
+# the same predicate in place for the next family.
+#
+# Measured the same day: 102 of this repository's tracked files differed from
+# their own commits by line endings alone, content divergence zero, with
+# `git status` silent on all of them. `git config --local core.autocrlf` is
+# empty here - the 2026-08-21 re-clone dropped it - so the global `true`
+# applies.
+#
+# `-text` means git does not convert, NOT that the file is LF.
+* -text
+
 # Asset bytes are content-addressed by Manta, so a checkout must not rewrite them.
 #
 # manta6_corpus_baseline.collect_assets walks assets/<modid> with NO extension
