@@ -42,7 +42,23 @@ public final class SasWikiTrigger {
         if (ticksUntilCapture < 0) return;
         if (--ticksUntilCapture > 0) return;
         ticksUntilCapture = -1;
-        SasWikiLiveCapture.captureAll(false);
+        // 起動前に screenshots/wiki/_request_png.txt を置くと、join 時の自動パスでも
+        // PNG を保存する (runClient 全自動キャプチャ用。通常 join は従来どおり登録のみ)。
+        // マーカーは「1 枚以上保存できた後」に消す — world 未準備で 0 枚のまま消費すると
+        // 次回 login の retry が savePng=false で走り、PNG が永久に書かれないため。
+        var req = java.nio.file.Paths.get(
+                net.minecraft.client.Minecraft.getInstance().gameDirectory.getPath(),
+                "screenshots", "wiki", "_request_png.txt");
+        boolean savePng = false;
+        try {
+            savePng = java.nio.file.Files.exists(req);
+        } catch (Throwable ignored) {}
+        int captured = SasWikiLiveCapture.captureAll(savePng);
+        if (savePng && captured > 0) {
+            try {
+                java.nio.file.Files.deleteIfExists(req);
+            } catch (Throwable ignored) {}
+        }
     }
 
     @SubscribeEvent

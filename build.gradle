@@ -30,6 +30,12 @@ neoForge {
         client {
             client()
             systemProperty 'neoforge.enabledGameTestNamespaces', 'spatialaudiosystem'
+            // wiki キャプチャ全自動用: -PwikicapWorld=<saves のフォルダ名> で
+            // そのシングルプレイワールドへ直行する (通常起動には影響なし)
+            if (project.hasProperty('wikicapWorld')) {
+                programArgument '--quickPlaySingleplayer'
+                programArgument project.property('wikicapWorld').toString()
+            }
         }
         server {
             server()
