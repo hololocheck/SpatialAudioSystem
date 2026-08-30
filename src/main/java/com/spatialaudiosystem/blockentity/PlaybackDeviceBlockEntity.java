@@ -1,14 +1,13 @@
 package com.spatialaudiosystem.blockentity;
 
 import com.spatialaudiosystem.audio.AudioStorage;
+import com.spatialaudiosystem.audio.PlaybackDelivery;
 import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.item.RangeBoardItem;
 import com.spatialaudiosystem.item.RecordingMediumItem;
 import com.spatialaudiosystem.menu.PlaybackDeviceMenu;
-import com.spatialaudiosystem.network.ClientAudioChunkPayload;
-import com.spatialaudiosystem.network.ClientPlayAudioPayload;
 import com.spatialaudiosystem.network.ClientStopAudioPayload;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -33,6 +32,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 
 public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvider, OwnedDevice {
+    /** Shares the loop signal's logger with {@link com.spatialaudiosystem.audio.AudioManager}. */
+    private static final org.slf4j.Logger LOOP_SIGNAL =
+            org.slf4j.LoggerFactory.getLogger("SAS-Loop");
+
     public static final int MEDIA_SLOT = 0;
     public static final int RANGE_SLOT = 1;
     public static final int SLOT_COUNT = 2;
@@ -42,6 +45,15 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     /** Alias used by the entry-based schedule UI; entries share the playlist capacity. */
     public static final int MAX_ENTRIES = PLAYLIST_SIZE;
     public static final int MAX_PLAY_COUNT = 10;
+    /**
+     * The play count meaning "never stop".
+     *
+     * <p>Zero was free: a count has always been clamped to at least one, so no saved device can
+     * be holding it by accident, and a legacy world with no counts at all reads as one rather
+     * than as this. Scrolling runs {@code 1..MAX_PLAY_COUNT} and then here, so the endless
+     * setting sits one step past the largest finite one instead of behind a separate control.
+     */
+    public static final int LOOP_FOREVER = 0;
 
     private final ItemStackHandler inventory = new ItemStackHandler(SLOT_COUNT) {
         @Override
@@ -66,6 +78,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private final ItemStackHandler playlist = new ItemStackHandler(PLAYLIST_SIZE) {
         @Override
         protected void onContentsChanged(int slot) {
+            onPlaylistSlotChanged(slot);
             setChanged();
             if (level != null && !level.isClientSide()) {
                 level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
@@ -86,6 +99,28 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private int entryCount = 0;
     /** Entry the scheduler is currently playing, for the playing-frame highlight (-1 = none). Transient. */
     private int playingEntry = -1;
+    /**
+     * Entry this device is looping endlessly (-1 = none). Persisted, unlike {@link #playingEntry}.
+     *
+     * <p>"For as long as the server is up" cannot be held in a running sequence: the scheduler's
+     * state lives for one run and its device's chunk unloads whenever nobody is near. This is the
+     * standing instruction that {@link #tick} restores the sound from after a restart or a chunk
+     * reload, so the loop outlives both.
+     */
+    private int loopingEntry = -1;
+    /**
+     * Earliest server tick at which {@link #tick} may try to restore the loop, so a device whose
+     * audio is missing is not retried every tick.
+     *
+     * <p>Held as the next allowed tick rather than the last attempted one. The obvious form —
+     * a {@code Long.MIN_VALUE} "never tried" sentinel compared as {@code now - last >= interval}
+     * — overflows: {@code now - Long.MIN_VALUE} wraps negative for every game time there is, so
+     * the comparison is false forever and the restore never runs. It was written that way and the
+     * loop silently never came back.
+     */
+    private long nextLoopArmTick = 0;
+    /** How often {@link #tick} may try to restore a loop that is armed but not sounding. */
+    private static final long LOOP_ARM_RETRY_TICKS = 20;
     /** Schedule mode: the playlist editor is armed and the single-play media slot is barred. */
     private boolean scheduleMode = false;
     private java.util.UUID ownerUUID = null;   // first player to open this device
@@ -141,6 +176,23 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         markUpdated();
     }
 
+    /**
+     * A playlist row changed: if it is the one looping, the endless sound loses its source.
+     *
+     * <p>Taking the medium out of that row has to stop the sound it is producing.
+     * {@link #removeEntry} and {@link #swapEntries} stop it because the armed index would come
+     * to name other media, but emptying or replacing a slot in place changes neither the index
+     * nor the count, so nothing else here notices and the sound would play on with its source
+     * gone. The endless sound is tied to the medium that was there when it started.
+     *
+     * <p>Named rather than inlined in the handler so it can be exercised directly.
+     */
+    void onPlaylistSlotChanged(int slot) {
+        if (loopingEntry == slot && level != null && !level.isClientSide()) {
+            stopPlayback();
+        }
+    }
+
     /** setChanged + a block-update sync, mirroring the inline pattern used across this class. */
     private void markUpdated() {
         setChanged();
@@ -161,9 +213,28 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         return (idx >= 0 && idx < PLAYLIST_SIZE) ? playCounts[idx] : 1;
     }
 
+    /** True when entry {@code idx} is set to play endlessly. */
+    public boolean isLoopEntry(int idx) {
+        return getPlayCount(idx) == LOOP_FOREVER;
+    }
+
+    /**
+     * Sets entry {@code idx}'s play count, cycling through {@code 1..MAX_PLAY_COUNT} and then
+     * {@link #LOOP_FOREVER}.
+     *
+     * <p>Cycling rather than clamping is what lets the wheel reach the endless setting: the
+     * screen sends a delta of one either way and this is the only place that knows where the
+     * range wraps.
+     */
     public void setPlayCount(int idx, int n) {
         if (idx < 0 || idx >= PLAYLIST_SIZE) return;
-        playCounts[idx] = Math.max(1, Math.min(MAX_PLAY_COUNT, n));
+        int span = MAX_PLAY_COUNT + 1;                 // the finite counts plus LOOP_FOREVER
+        int next = ((n % span) + span) % span;
+        boolean wasLooping = playCounts[idx] == LOOP_FOREVER;
+        playCounts[idx] = next;
+        // Turning the endless setting off has to stop the sound that setting is producing;
+        // otherwise the display says a finite count while the device plays on forever.
+        if (wasLooping && next != LOOP_FOREVER && loopingEntry == idx) stopPlayback();
         markUpdated();
     }
 
@@ -182,6 +253,9 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     /** Remove entry {@code idx}, shifting later entries down, and return its media stack. */
     public ItemStack removeEntry(int idx) {
         if (idx < 0 || idx >= entryCount) return ItemStack.EMPTY;
+        // Entries below the removed one shift up, so an armed loop's index would come to name a
+        // different medium. Stopping is the only answer that cannot be silently wrong.
+        if (loopingEntry >= 0) stopPlayback();
         ItemStack removed = playlist.getStackInSlot(idx);
         for (int i = idx; i < entryCount - 1; i++) {
             playlist.setStackInSlot(i, playlist.getStackInSlot(i + 1));
@@ -197,6 +271,8 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     /** Swap entries {@code a} and {@code b} (media + play count together) for reordering. */
     public boolean swapEntries(int a, int b) {
         if (a < 0 || a >= entryCount || b < 0 || b >= entryCount || a == b) return false;
+        // Same reason as removeEntry: after the swap the armed index names other media.
+        if (loopingEntry >= 0) stopPlayback();
         ItemStack sa = playlist.getStackInSlot(a);
         playlist.setStackInSlot(a, playlist.getStackInSlot(b));
         playlist.setStackInSlot(b, sa);
@@ -284,10 +360,18 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
      * mode. Shared by the single MEDIA_SLOT play and the playlist scheduler.
      */
     public boolean playMedia(ItemStack mediaStack) {
-        if (!RecordingMediumItem.hasAudioData(mediaStack) || level == null) return false;
+        return playMedia(mediaStack, false);
+    }
 
-        byte[] audioData = AudioStorage.loadForItem(level.getServer(), mediaStack);
-        if (audioData == null) return false;
+    /**
+     * @param loop play endlessly. The client restarts the decoder on its own, so an endless
+     *             sound costs one transfer rather than one per repetition, and it does not
+     *             depend on a completion report that stops arriving when nobody is online.
+     */
+    public boolean playMedia(ItemStack mediaStack, boolean loop) {
+        if (!RecordingMediumItem.hasAudioData(mediaStack) || level == null) return false;
+        if (!(level instanceof ServerLevel sl)) return false;
+
         String format = mediaStack.getOrDefault(ModDataComponents.AUDIO_FORMAT, "ogg");
 
         BlockPos rangePos1 = null, rangePos2 = null;
@@ -301,26 +385,52 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
             java.util.Arrays.fill(attRanges, attenuationRange);
         }
 
+        // Delivery owns both the initial send and every later one, so a sound reaching a
+        // player who arrives afterwards cannot describe itself differently from this one.
+        long playbackId = PlaybackDelivery.start(sl, getBlockPos(), mediaStack, format,
+                rangePos1, rangePos2, attenuationMode, attRanges, loop);
+        if (playbackId == PlaybackSessionRegistry.NO_PLAYBACK) return false;
+
         isPlaying = true;
         playbackStartTick = level.getGameTime();
         setChanged();
         level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
-
-        if (level instanceof ServerLevel sl) {
-            long playbackId = PlaybackSessionRegistry.begin(sl, getBlockPos());
-            ClientPlayAudioPayload metaPayload = new ClientPlayAudioPayload(
-                    getBlockPos(), playbackId, audioData.length, format, rangePos1, rangePos2,
-                    attenuationMode, attRanges);
-            for (ServerPlayer sp : sl.players()) {
-                PacketDistributor.sendToPlayer(sp, metaPayload);
-                ClientAudioChunkPayload.sendChunked(sp, getBlockPos(), playbackId, audioData);
-            }
-        }
         return true;
+    }
+
+    /**
+     * Remembers that entry {@code idx} is the one playing endlessly, so the sound is restored
+     * after a restart or a chunk reload. Pass -1 to disarm without stopping anything.
+     */
+    public void armLoop(int idx) {
+        loopingEntry = idx;
+        setChanged();
+    }
+
+    /** The entry this device is looping endlessly, or -1. */
+    public int getLoopingEntry() {
+        return loopingEntry;
+    }
+
+    /**
+     * Whether this device is supposed to be producing an endless sound right now.
+     *
+     * <p>Re-derived from the schedule rather than trusting the index on its own. An index alone
+     * says "entry 2" long after entry 2 stopped being endless or stopped existing, and -1 as the
+     * off value is carried by a field initializer — which is exactly the assumption that does not
+     * hold for an instance built without one. Every term here is checked, and the order matters:
+     * the bound is tested before the play count is read, so an entry-less device never indexes
+     * the counts array.
+     */
+    private boolean isLoopArmed() {
+        return loopingEntry >= 0 && loopingEntry < entryCount && isLoopEntry(loopingEntry);
     }
 
     public void stopPlayback() {
         isPlaying = false;
+        // Every stop path runs through here, so this is the one place that has to disarm the
+        // loop. Leaving it armed would have tick() start the sound again a second later.
+        loopingEntry = -1;
         setChanged();
         if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
@@ -349,11 +459,49 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     }
 
     public static void tick(Level level, BlockPos pos, BlockState state, PlaybackDeviceBlockEntity entity) {
-        if (!level.isClientSide() && entity.isPlaying) {
-            // Safety-net timeout: if client never sent stop, auto-reset after PLAYBACK_TIMEOUT_TICKS
-            if (level.getGameTime() - entity.playbackStartTick > PLAYBACK_TIMEOUT_TICKS) {
-                entity.stopPlayback();
+        if (level.isClientSide()) return;
+
+        if (entity.isLoopArmed()) {
+            // Only the loop branch needs the server level; the timeout below does not, and
+            // narrowing the whole method to it would change a path this is not about.
+            if (!(level instanceof ServerLevel serverLevel)) return;
+            // An endless sound has no end to wait for, so the timeout below would become the
+            // thing that ends it. This is also where a loop comes back after a server restart
+            // or a chunk reload. Whether it is actually sounding is asked of the registry and
+            // not of isPlaying: isPlaying is restored from disk and can outlive the run that
+            // set it, so it would report a sound that no client is playing.
+            boolean sounding = PlaybackSessionRegistry.currentId(serverLevel, pos)
+                    != PlaybackSessionRegistry.NO_PLAYBACK;
+            if (!sounding && level.getGameTime() >= entity.nextLoopArmTick) {
+                entity.nextLoopArmTick = level.getGameTime() + LOOP_ARM_RETRY_TICKS;
+                entity.restoreLoop();
             }
+            return;
+        }
+
+        // Safety-net timeout: if client never sent stop, auto-reset after PLAYBACK_TIMEOUT_TICKS
+        if (entity.isPlaying && level.getGameTime() - entity.playbackStartTick > PLAYBACK_TIMEOUT_TICKS) {
+            entity.stopPlayback();
+        }
+    }
+
+    /** Starts the armed loop again, or disarms when its entry can no longer produce a sound. */
+    private void restoreLoop() {
+        // isLoopArmed() has already established the index and the endless setting; what is left
+        // is whether the entry still holds media.
+        ItemStack media = playlist.getStackInSlot(loopingEntry);
+        if (media.isEmpty()) {
+            armLoop(-1);
+            return;
+        }
+        // A failure here is left armed on purpose: the entry still names media, so the cause is
+        // storage rather than the schedule, and the retry interval keeps that from being costly.
+        if (playMedia(media, true)) {
+            setPlayingEntry(loopingEntry);
+            // The point of the whole arm-and-restore mechanism, said positively: "no error after
+            // a restart" is indistinguishable from "the loop never came back".
+            LOOP_SIGNAL.info("restored pos={},{},{} entry={}",
+                    getBlockPos().getX(), getBlockPos().getY(), getBlockPos().getZ(), loopingEntry);
         }
     }
 
@@ -364,6 +512,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         tag.put("playlist", playlist.serializeNBT(registries));
         tag.putIntArray("playCounts", playCounts.clone());
         tag.putInt("entryCount", entryCount);
+        tag.putInt("loopingEntry", loopingEntry);   // survives restart: tick() restores the sound
         tag.putBoolean("scheduleMode", scheduleMode);
         tag.putBoolean("showRange", showRange);
         tag.putBoolean("isPlaying", isPlaying);
@@ -379,7 +528,19 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private void loadPlayCounts(CompoundTag tag) {
         int[] pc = tag.getIntArray("playCounts");
         for (int i = 0; i < PLAYLIST_SIZE; i++) {
-            playCounts[i] = (i < pc.length && pc[i] >= 1) ? Math.min(MAX_PLAY_COUNT, pc[i]) : 1;
+            if (i >= pc.length) {
+                playCounts[i] = 1;
+                continue;
+            }
+            int stored = pc[i];
+            // LOOP_FOREVER became a legal stored value in 1.0.6. No earlier version could write
+            // it — every write went through a clamp with a floor of one — so reading it back as
+            // endless cannot mistake old data for a setting it never held.
+            if (stored == LOOP_FOREVER) {
+                playCounts[i] = LOOP_FOREVER;
+            } else {
+                playCounts[i] = stored >= 1 ? Math.min(MAX_PLAY_COUNT, stored) : 1;
+            }
         }
     }
 
@@ -404,6 +565,9 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         loadPlayCounts(tag);
         loadEntryCount(tag);
         scheduleMode = tag.getBoolean("scheduleMode");
+        loopingEntry = tag.contains("loopingEntry")
+                ? Math.max(-1, Math.min(MAX_ENTRIES - 1, tag.getInt("loopingEntry")))
+                : -1;
         // Transient on disk (defaults -1); carries the playing-frame index on client update tags.
         playingEntry = tag.contains("playingEntry") ? tag.getInt("playingEntry") : -1;
         if (tag.hasUUID("OwnerUUID")) {

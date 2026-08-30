@@ -113,4 +113,108 @@ class PlaybackSessionRegistryTest {
                 .as("a sound stopped from the GUI must not also fire a completion")
                 .isFalse();
     }
+
+    // ===== who still needs this sound (SAS-AUDIO-009) =====
+    //
+    // A sound used to be sent once, to whoever was online at that instant. Someone joining,
+    // arriving from another dimension or walking into range heard nothing, and the failure was
+    // silence, so no other client could show it. The registry is the only thing that knows a
+    // sound is still going, so it is what has to answer "who has not been sent this".
+
+    private static final java.util.UUID ALICE = java.util.UUID.nameUUIDFromBytes("alice".getBytes());
+    private static final java.util.UUID BOB = java.util.UUID.nameUUIDFromBytes("bob".getBytes());
+
+    private static PlaybackSessionRegistry.Replay replay() {
+        return new PlaybackSessionRegistry.Replay(
+                net.minecraft.world.item.ItemStack.EMPTY, "ogg", null, null, true, new int[6], true);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: an active sound is pending for a player who has not been sent it")
+    void anActiveSoundIsPendingForSomeoneWhoLacksIt() {
+        long id = PlaybackSessionRegistry.begin(overworld, POS, replay());
+
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE))
+                .singleElement()
+                .satisfies(p -> {
+                    assertThat(p.pos()).isEqualTo(POS);
+                    assertThat(p.playbackId()).isEqualTo(id);
+                });
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: a sound stops being pending once the player has been sent it")
+    void deliveryRemovesItFromPending() {
+        long id = PlaybackSessionRegistry.begin(overworld, POS, replay());
+        PlaybackSessionRegistry.markDelivered(overworld.dimension(), POS, id, ALICE);
+
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE)).isEmpty();
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), BOB))
+                .as("delivery is per player, not per sound")
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: marking against a replaced sound does not suppress the new one")
+    void markingAStaleIdDoesNotSuppressTheCurrentSound() {
+        long first = PlaybackSessionRegistry.begin(overworld, POS, replay());
+        long second = PlaybackSessionRegistry.begin(overworld, POS, replay());
+        assertThat(second).isNotEqualTo(first);
+
+        // A delivery of the sound that has already been displaced arrives late. Accepting it
+        // against the new sound would leave this player permanently without the one now playing.
+        PlaybackSessionRegistry.markDelivered(overworld.dimension(), POS, first, ALICE);
+
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE))
+                .singleElement()
+                .satisfies(p -> assertThat(p.playbackId()).isEqualTo(second));
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: forgetting a player makes every active sound pending again")
+    void forgettingAPlayerMakesSoundsPendingAgain() {
+        long id = PlaybackSessionRegistry.begin(overworld, POS, replay());
+        PlaybackSessionRegistry.markDelivered(overworld.dimension(), POS, id, ALICE);
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE)).isEmpty();
+
+        // Logging out, changing dimension and respawning all unload the client level, and the
+        // client forgets its sounds when that happens.
+        PlaybackSessionRegistry.forgetPlayer(ALICE);
+
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: pending is per dimension")
+    void pendingIsPerDimension() {
+        PlaybackSessionRegistry.begin(overworld, POS, replay());
+
+        assertThat(PlaybackSessionRegistry.pendingFor(nether.dimension(), ALICE))
+                .as("the same coordinates in another dimension are not this sound")
+                .isEmpty();
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: a sound registered without replay data is never pending")
+    void aSoundWithoutReplayDataIsNeverPending() {
+        // The recording screen's preview registers this way on purpose: it is a check on the
+        // medium in your hand, not a sound placed in the world for others to walk into.
+        PlaybackSessionRegistry.begin(overworld, POS);
+
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE)).isEmpty();
+        assertThat(PlaybackSessionRegistry.currentId(overworld, POS))
+                .as("it is still an active sound for every other purpose")
+                .isNotEqualTo(PlaybackSessionRegistry.NO_PLAYBACK);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: an ended sound is pending for nobody")
+    void anEndedSoundIsPendingForNobody() {
+        PlaybackSessionRegistry.begin(overworld, POS, replay());
+        PlaybackSessionRegistry.end(overworld, POS);
+
+        assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE)).isEmpty();
+        assertThat(PlaybackSessionRegistry.isEmpty()).isTrue();
+    }
 }

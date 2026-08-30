@@ -22,7 +22,8 @@ public record ClientPlayAudioPayload(
         BlockPos rangePos1,
         BlockPos rangePos2,
         boolean attenuationMode,
-        int[] attenuationRanges) implements CustomPacketPayload {
+        int[] attenuationRanges,
+        boolean loop) implements CustomPacketPayload {
 
     /** One value per face. Sizing an array from the wire without this is an allocation
      *  a peer chooses for us. */
@@ -48,6 +49,7 @@ public record ClientPlayAudioPayload(
         buf.writeBoolean(p.attenuationMode);
         buf.writeVarInt(p.attenuationRanges.length);
         for (int r : p.attenuationRanges) buf.writeVarInt(r);
+        buf.writeBoolean(p.loop);
     }
 
     private static ClientPlayAudioPayload read(FriendlyByteBuf buf) {
@@ -68,8 +70,9 @@ public record ClientPlayAudioPayload(
         }
         int[] attenuationRanges = new int[len];
         for (int i = 0; i < len; i++) attenuationRanges[i] = buf.readVarInt();
+        boolean loop = buf.readBoolean();
         return new ClientPlayAudioPayload(pos, playbackId, totalSize, format, rangePos1, rangePos2,
-                attenuationMode, attenuationRanges);
+                attenuationMode, attenuationRanges, loop);
     }
 
     public static void handle(ClientPlayAudioPayload payload, IPayloadContext context) {
@@ -77,7 +80,7 @@ public record ClientPlayAudioPayload(
                 ClientAudioChunkPayload.prepareSession(payload.pos, payload.playbackId,
                         payload.totalSize, payload.format,
                         payload.rangePos1, payload.rangePos2,
-                        payload.attenuationMode, payload.attenuationRanges));
+                        payload.attenuationMode, payload.attenuationRanges, payload.loop));
     }
 
     @Override

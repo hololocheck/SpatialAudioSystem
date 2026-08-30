@@ -48,7 +48,16 @@ public final class PlaybackScheduler {
 
     /** Continuous play: run the playlist from the first entry. */
     public static void playAll(ServerLevel level, BlockPos pos) {
-        if (!(level.getBlockEntity(pos) instanceof PlaybackDeviceBlockEntity)) return;
+        if (!(level.getBlockEntity(pos) instanceof PlaybackDeviceBlockEntity be)) return;
+        // Starting a sequence supersedes an endless entry that is already running. Leaving the
+        // arm in place would suppress the device's playback timeout for the whole sequence, and
+        // would let the block entity restart the endless entry in the one-tick gap the scheduler
+        // leaves between tracks.
+        //
+        // Gated on there actually being one: Play All is not disabled for an empty schedule, so
+        // stopping unconditionally would make it silence a sound started from the single media
+        // slot, which it never did before and which is not what "supersede" means here.
+        if (be.getLoopingEntry() >= 0) be.stopPlayback();
         Seq s = new Seq(pos, level.dimension());
         s.entryIdx = 0;
         sequences.put(key(level.dimension(), pos), s);
@@ -98,13 +107,27 @@ public final class PlaybackScheduler {
 
     private static void fire(ServerLevel level, Seq s, PlaybackDeviceBlockEntity be) {
         ItemStack media = be.getPlaylist().getStackInSlot(s.entryIdx);
-        if (be.playMedia(media)) {
-            s.playing = true;
-            if (be.getPlayingEntry() != s.entryIdx) be.setPlayingEntry(s.entryIdx);
-        } else {
+        boolean loop = be.isLoopEntry(s.entryIdx);
+
+        if (!be.playMedia(media, loop)) {
             s.entryIdx++;
             advance(level, s);
+            return;
         }
+
+        if (be.getPlayingEntry() != s.entryIdx) be.setPlayingEntry(s.entryIdx);
+
+        if (loop) {
+            // An endless entry is the last thing this device plays: there is no completion to
+            // wait for and nothing after it to advance to. The sequence is dropped rather than
+            // parked here forever, and the block entity's own arm — which is persisted — becomes
+            // what keeps the sound alive across a restart or a chunk reload.
+            be.armLoop(s.entryIdx);
+            sequences.remove(key(s.dim, s.pos));
+            return;
+        }
+
+        s.playing = true;
     }
 
     public static void onPlaybackEnded(belugalab.sas.api.PlaybackEndedEvent event) {

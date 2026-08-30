@@ -81,7 +81,7 @@
   "sas.hint.play_all": "Play every entry in order",
   "sas.hint.stop_all": "Stop the sequence",
   "sas.hint.entry_index": "Position of this entry in the sequence",
-  "sas.hint.count": "How many times this entry repeats. Hover and scroll to change",
+  "sas.hint.count": "How many times this entry repeats. Hover and scroll to change. One step past 10 is ∞, which plays until you stop it",
   "sas.hint.entry_up": "Move this entry earlier",
   "sas.hint.entry_down": "Move this entry later",
   "sas.hint.entry_test": "Preview just this entry",

@@ -28,7 +28,7 @@ class PlaybackSessionCancelTest {
     private static final long PLAYBACK_ID = 0x5A5_1234_5678L;
 
     private static PlaybackSession newSession() {
-        return new PlaybackSession(POS, PLAYBACK_ID, null, null, true, new int[6]);
+        return new PlaybackSession(POS, PLAYBACK_ID, null, null, true, new int[6], false);
     }
 
     private static AudioPlayback playbackOn(SourceDataLine line) {

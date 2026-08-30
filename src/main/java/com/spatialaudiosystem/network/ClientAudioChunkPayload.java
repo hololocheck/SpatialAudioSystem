@@ -55,12 +55,13 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
     /** Called when ClientPlayAudioPayload (metadata) arrives — prepare the reassembly buffer. */
     public static void prepareSession(BlockPos pos, long playbackId, int totalSize, String format,
                                        BlockPos rangePos1, BlockPos rangePos2,
-                                       boolean attenuationMode, int[] attenuationRanges) {
+                                       boolean attenuationMode, int[] attenuationRanges,
+                                       boolean loop) {
         long now = System.currentTimeMillis();
         activeSessions.entrySet().removeIf(e -> now - e.getValue().createdAt > SESSION_TIMEOUT_MS);
 
         activeSessions.put(pos, new DownloadSession(
-                playbackId, totalSize, format, rangePos1, rangePos2, attenuationMode, attenuationRanges));
+                playbackId, totalSize, format, rangePos1, rangePos2, attenuationMode, attenuationRanges, loop));
     }
 
     public static void handle(ClientAudioChunkPayload payload, IPayloadContext context) {
@@ -86,7 +87,7 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
             AudioManager.getInstance().playAudio(
                     context.player().level(), payload.pos, session.playbackId, session.buffer, session.format,
                     session.rangePos1, session.rangePos2,
-                    session.attenuationMode, session.attenuationRanges);
+                    session.attenuationMode, session.attenuationRanges, session.loop);
         });
     }
 
@@ -114,13 +115,15 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
         final BlockPos rangePos1, rangePos2;
         final boolean attenuationMode;
         final int[] attenuationRanges;
+        /** Restart at the top forever, instead of ending and reporting completion. */
+        final boolean loop;
         final long createdAt;
         /** Which indices have arrived. Counting receipts instead would let a repeated
          *  chunk hand a half-zero buffer to the decoder. */
         final BitSet received;
 
         DownloadSession(long playbackId, int totalSize, String format, BlockPos rangePos1, BlockPos rangePos2,
-                        boolean attenuationMode, int[] attenuationRanges) {
+                        boolean attenuationMode, int[] attenuationRanges, boolean loop) {
             this.playbackId = playbackId;
             this.buffer = new byte[totalSize];
             this.format = format;
@@ -128,6 +131,7 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
             this.rangePos2 = rangePos2;
             this.attenuationMode = attenuationMode;
             this.attenuationRanges = attenuationRanges;
+            this.loop = loop;
             this.createdAt = System.currentTimeMillis();
             this.received = new BitSet(chunkCountFor(totalSize));
         }

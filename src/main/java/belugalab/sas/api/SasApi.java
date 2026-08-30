@@ -2,13 +2,12 @@ package belugalab.sas.api;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.audio.AudioStorage;
+import com.spatialaudiosystem.audio.PlaybackDelivery;
 import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.item.RangeBoardItem;
 import com.spatialaudiosystem.item.RecordingMediumItem;
-import com.spatialaudiosystem.network.ClientAudioChunkPayload;
-import com.spatialaudiosystem.network.ClientPlayAudioPayload;
 import com.spatialaudiosystem.network.ClientStopAudioPayload;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -168,13 +167,39 @@ public final class SasApi {
                                      ItemStack recordingMedium,
                                      ItemStack rangeBoard,
                                      boolean attenuationMode) {
+        return playAudio(level, pos, recordingMedium, rangeBoard, attenuationMode, false);
+    }
+
+    /**
+     * Play audio at the given position, optionally forever.
+     *
+     * <p>An endless sound is looped by each client on audio it already holds, so it costs one
+     * transfer per listener rather than one per repetition, and it does not depend on the
+     * end-of-playback report — which is sent by clients and therefore stops arriving when
+     * nobody is online. This is the supported way to hold a continuous ambience; chaining
+     * {@link PlaybackEndedEvent} back into {@code playAudio} is not, and stops on an empty
+     * server.
+     *
+     * <p>An endless sound is also delivered to players who join, arrive from another dimension,
+     * or walk into range while it is still playing. A one-shot is not: it is sent once, to the
+     * players in the level at that moment, exactly as before. Restarting a short sound from the
+     * top for a late arrival would put them out of sync with everyone still hearing the original,
+     * and a one-shot started at a position with no block entity has nothing that ever ends its
+     * session, so it would be offered — long stale — to the first player to walk past.
+     *
+     * @param loop restart at the top instead of ending. Stop it with {@link #stopAudio}.
+     * @see #playAudio(ServerLevel, BlockPos, ItemStack, ItemStack, boolean)
+     */
+    public static boolean playAudio(ServerLevel level, BlockPos pos,
+                                     ItemStack recordingMedium,
+                                     ItemStack rangeBoard,
+                                     boolean attenuationMode,
+                                     boolean loop) {
         if (level == null || pos == null) return false;
         if (!hasAudio(recordingMedium)) return false;
 
         MinecraftServer server = level.getServer();
         if (server == null) return false;
-        byte[] audioData = AudioStorage.loadForItem(server, recordingMedium);
-        if (audioData == null) return false;
         String format = getAudioFormat(recordingMedium);
 
         BlockPos rangePos1 = null, rangePos2 = null;
@@ -184,19 +209,15 @@ public final class SasApi {
         }
         int[] attRanges = getAttenuationRanges(rangeBoard);
 
-        long playbackId = PlaybackSessionRegistry.begin(level, pos);
-        ClientPlayAudioPayload meta = new ClientPlayAudioPayload(
-                pos, playbackId, audioData.length, format, rangePos1, rangePos2, attenuationMode, attRanges);
+        // Delivery sends to this level's players and remembers the sound so a later arrival can
+        // be sent it too. A sound at (x,y,z) in the Nether is not the same sound as (x,y,z) in
+        // the Overworld, and shipping the audio to everyone meant a 10 MB transfer per player
+        // who could never hear it.
+        long playbackId = PlaybackDelivery.start(level, pos, recordingMedium, format,
+                rangePos1, rangePos2, attenuationMode, attRanges, loop);
+        if (playbackId == PlaybackSessionRegistry.NO_PLAYBACK) return false;
 
-        // Only this level's players. A sound at (x,y,z) in the Nether is not the same
-        // sound as (x,y,z) in the Overworld, and shipping the audio to everyone meant a
-        // 10 MB transfer per player who could never hear it.
-        for (ServerPlayer sp : level.players()) {
-            PacketDistributor.sendToPlayer(sp, meta);
-            ClientAudioChunkPayload.sendChunked(sp, pos, playbackId, audioData);
-        }
-        SpatialAudioSystem.LOGGER.debug("[SasApi] playAudio pos={} size={}B format={}",
-                pos, audioData.length, format);
+        SpatialAudioSystem.LOGGER.debug("[SasApi] playAudio pos={} format={} loop={}", pos, format, loop);
         return true;
     }
 

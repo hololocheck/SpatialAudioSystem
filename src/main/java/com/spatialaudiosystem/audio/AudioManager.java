@@ -4,7 +4,6 @@ import com.spatialaudiosystem.SpatialAudioSystem;
 import javazoom.jl.decoder.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.AABB;
 import org.lwjgl.stb.STBVorbis;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -22,6 +21,24 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AudioManager {
+    /**
+     * Positive signal that a loop actually came round again, on its own logger.
+     *
+     * <p>Silence proves nothing: a sound that stopped and a sound still playing look identical
+     * from outside, which is why an endless playback needs a line saying it restarted rather than
+     * an absence of errors.
+     */
+    private static final org.slf4j.Logger LOOP_SIGNAL =
+            org.slf4j.LoggerFactory.getLogger("SAS-Loop");
+    /**
+     * Restarts logged per playback before the signal falls silent.
+     *
+     * <p>Bounded because an endless ambience would otherwise write a line every few seconds for
+     * the life of the server. Three is enough to show a loop is looping rather than having played
+     * once; the driver asserts that many and no more.
+     */
+    private static final int LOOP_LOG_PASSES = 3;
+
     private static final AudioManager INSTANCE = new AudioManager();
     /**
      * The sound occupying each position, from the moment it is asked for until its worker
@@ -78,8 +95,21 @@ public class AudioManager {
      */
     public void playAudio(Level level, BlockPos pos, long playbackId, byte[] audioData, String format,
                           BlockPos rangePos1, BlockPos rangePos2, boolean attenuationMode, int[] attenuationRanges) {
+        playAudio(level, pos, playbackId, audioData, format, rangePos1, rangePos2,
+                attenuationMode, attenuationRanges, false);
+    }
+
+    /**
+     * @param loop when true the decoder restarts at the top instead of finishing, on the same
+     *             open line. Looping costs no further network traffic and produces no completion
+     *             report, so an endless ambience does not depend on a client → server → client
+     *             round trip that stops happening the moment nobody is online.
+     */
+    public void playAudio(Level level, BlockPos pos, long playbackId, byte[] audioData, String format,
+                          BlockPos rangePos1, BlockPos rangePos2, boolean attenuationMode,
+                          int[] attenuationRanges, boolean loop) {
         PlaybackSession session = new PlaybackSession(
-                pos, playbackId, rangePos1, rangePos2, attenuationMode, attenuationRanges);
+                pos, playbackId, rangePos1, rangePos2, attenuationMode, attenuationRanges, loop);
 
         // Published before the worker exists, so a stop in the next millisecond has
         // something to cancel rather than racing an unpublished playback.
@@ -93,13 +123,27 @@ public class AudioManager {
                 SpatialAudioSystem.LOGGER.error("Failed to play audio at {}", pos, e);
             } finally {
                 sessions.remove(pos, session);
-                // Report whichever sound this was. The server decides whether it is still
-                // the one playing there.
-                finishedPlaybacks.add(new FinishedPlayback(pos, playbackId));
+                // A looping sound only ever ends because something stopped it, and whatever
+                // stopped it already knows. Reporting here would tell the server a sound it
+                // just cancelled has finished, and for a loop that was never restarted by a
+                // report in the first place it can only cause a spurious restart.
+                if (!session.loop) {
+                    // Report whichever sound this was. The server decides whether it is still
+                    // the one playing there.
+                    finishedPlaybacks.add(new FinishedPlayback(pos, playbackId));
+                }
             }
         }, "SSS-Audio-" + pos.toShortString());
         playThread.setDaemon(true);
         playThread.start();
+    }
+
+    /** Records that a looping playback began its {@code pass}-th time through the audio. */
+    private static void signalLoopRestart(PlaybackSession session, String format, int pass) {
+        if (pass > LOOP_LOG_PASSES) return;
+        LOOP_SIGNAL.info("restart pos={},{},{} id={} pass={} format={}",
+                session.pos.getX(), session.pos.getY(), session.pos.getZ(),
+                String.format("%016x", session.playbackId), pass, format);
     }
 
     private void decodeAndPlay(PlaybackSession session, Level level, byte[] audioData, String format)
@@ -160,38 +204,65 @@ public class AudioManager {
     }
 
     private void streamMp3(PlaybackSession session, Level level, byte[] audioData) throws Exception {
-        ByteArrayInputStream bais = new ByteArrayInputStream(audioData);
-        Bitstream bitstream = new Bitstream(bais);
-        Decoder decoder = new Decoder();
+        // The line's format has to be known before the line is opened, and for MP3 that means
+        // decoding a frame. Doing it on a throwaway stream lets every real pass — including a
+        // loop's second and later passes — start from frame 0 through one code path.
+        AudioFormat audioFormat = probeMp3Format(session, audioData);
+        if (audioFormat == null) return;
+
+        final Bitstream[] stream = {null};
         try {
-            Header firstHeader = bitstream.readFrame();
-            if (firstHeader == null) {
-                SpatialAudioSystem.LOGGER.error("MP3 file has no frames at {}", session.pos);
-                return;
-            }
-
-            SampleBuffer firstOutput = (SampleBuffer) decoder.decodeFrame(firstHeader, bitstream);
-            AudioFormat audioFormat = new AudioFormat(
-                    decoder.getOutputFrequency(), 16, decoder.getOutputChannels(), true, false);
-            bitstream.closeFrame();
-
             runOnLine(session, audioFormat, (line, playback) -> {
-                writeFrameToLine(firstOutput, line, playback, level);
+                int pass = 0;
+                do {
+                    if (++pass > 1) signalLoopRestart(session, "mp3", pass);
+                    closeQuietly(stream[0]);
+                    stream[0] = new Bitstream(new ByteArrayInputStream(audioData));
+                    Decoder decoder = new Decoder();
+                    boolean producedThisPass = false;
 
-                Header header;
-                while ((header = bitstream.readFrame()) != null) {
-                    if (playback.isStopped()) break;
-                    SampleBuffer output = (SampleBuffer) decoder.decodeFrame(header, bitstream);
-                    writeFrameToLine(output, line, playback, level);
-                    bitstream.closeFrame();
-                }
+                    Header header;
+                    while ((header = stream[0].readFrame()) != null) {
+                        if (playback.isStopped()) break;
+                        SampleBuffer output = (SampleBuffer) decoder.decodeFrame(header, stream[0]);
+                        writeFrameToLine(output, line, playback, level);
+                        stream[0].closeFrame();
+                        producedThisPass = true;
+                    }
+                    // A pass that produced nothing must not be restarted, or an undecodable
+                    // file would spin this thread at full speed forever.
+                    if (!producedThisPass) break;
+                } while (session.loop && !playback.isStopped());
             });
         } finally {
-            try {
-                bitstream.close();
-            } catch (Exception ignored) {
-                // Decoding already failed; the stream is in-memory and holds no OS handle.
+            closeQuietly(stream[0]);
+        }
+    }
+
+    /** The output format of {@code audioData}, or null if it holds no decodable frame. */
+    private AudioFormat probeMp3Format(PlaybackSession session, byte[] audioData) throws Exception {
+        Bitstream probe = new Bitstream(new ByteArrayInputStream(audioData));
+        try {
+            Header firstHeader = probe.readFrame();
+            if (firstHeader == null) {
+                SpatialAudioSystem.LOGGER.error("MP3 file has no frames at {}", session.pos);
+                return null;
             }
+            Decoder decoder = new Decoder();
+            decoder.decodeFrame(firstHeader, probe);
+            return new AudioFormat(
+                    decoder.getOutputFrequency(), 16, decoder.getOutputChannels(), true, false);
+        } finally {
+            closeQuietly(probe);
+        }
+    }
+
+    private static void closeQuietly(Bitstream stream) {
+        if (stream == null) return;
+        try {
+            stream.close();
+        } catch (Exception ignored) {
+            // In-memory stream; there is no OS handle to leak and nothing a caller could do.
         }
     }
 
@@ -236,12 +307,25 @@ public class AudioManager {
                 int chunkSamples = 4096;
                 ShortBuffer pcmBuffer = MemoryUtil.memAllocShort(chunkSamples * channels);
                 byte[] writeBuffer = new byte[chunkSamples * channels * 2];
+                // A pass that produced nothing must not be restarted: a file that decodes to
+                // no samples would otherwise spin this thread at full speed forever.
+                boolean producedThisPass = false;
+                int pass = 1;
                 try {
                     while (!playback.isStopped()) {
                         pcmBuffer.clear();
                         int samplesRead = STBVorbis.stb_vorbis_get_samples_short_interleaved(
                                 vorbisHandle, channels, pcmBuffer);
-                        if (samplesRead == 0) break;
+                        if (samplesRead == 0) {
+                            if (!session.loop || !producedThisPass) break;
+                            // Seeking the open decoder keeps the line running, so the loop
+                            // point carries no gap and costs no network traffic.
+                            STBVorbis.stb_vorbis_seek_start(vorbisHandle);
+                            producedThisPass = false;
+                            signalLoopRestart(session, "ogg", ++pass);
+                            continue;
+                        }
+                        producedThisPass = true;
 
                         int totalShorts = samplesRead * channels;
                         float gain = playback.getSoftwareGain();
@@ -264,28 +348,32 @@ public class AudioManager {
     }
 
     private void streamWav(PlaybackSession session, Level level, byte[] audioData) throws Exception {
-        ByteArrayInputStream bais = new ByteArrayInputStream(audioData);
-        BufferedInputStream bis = new BufferedInputStream(bais);
-
-        try (AudioInputStream audioStream = AudioSystem.getAudioInputStream(bis)) {
-            AudioFormat baseFormat = audioStream.getFormat();
-            AudioFormat pcmFormat = new AudioFormat(
+        AudioFormat pcmFormat;
+        try (AudioInputStream probe = AudioSystem.getAudioInputStream(
+                new BufferedInputStream(new ByteArrayInputStream(audioData)))) {
+            AudioFormat base = probe.getFormat();
+            pcmFormat = new AudioFormat(
                     AudioFormat.Encoding.PCM_SIGNED,
-                    baseFormat.getSampleRate(), 16,
-                    baseFormat.getChannels(), baseFormat.getChannels() * 2,
-                    baseFormat.getSampleRate(), false);
+                    base.getSampleRate(), 16,
+                    base.getChannels(), base.getChannels() * 2,
+                    base.getSampleRate(), false);
+        }
 
-            boolean alreadyPcm = baseFormat.getEncoding() == AudioFormat.Encoding.PCM_SIGNED
-                    && baseFormat.getSampleSizeInBits() == 16;
-            AudioInputStream pcmStream = alreadyPcm
-                    ? audioStream
-                    : AudioSystem.getAudioInputStream(pcmFormat, audioStream);
-            try {
-                runOnLine(session, pcmFormat, (line, playback) -> {
-                    byte[] buffer = new byte[4096];
+        final AudioInputStream[] stream = {null};
+        try {
+            runOnLine(session, pcmFormat, (line, playback) -> {
+                byte[] buffer = new byte[4096];
+                int pass = 0;
+                do {
+                    if (++pass > 1) signalLoopRestart(session, "wav", pass);
+                    closeStreamQuietly(stream[0]);
+                    stream[0] = openWavPcm(audioData, pcmFormat);
+                    boolean producedThisPass = false;
+
                     int bytesRead;
-                    while ((bytesRead = pcmStream.read(buffer)) != -1) {
+                    while ((bytesRead = stream[0].read(buffer)) != -1) {
                         if (playback.isStopped()) break;
+                        if (bytesRead > 0) producedThisPass = true;
                         float gain = playback.getSoftwareGain();
                         if (gain < 0.999f) {
                             for (int j = 0; j + 1 < bytesRead; j += 2) {
@@ -297,11 +385,33 @@ public class AudioManager {
                         }
                         line.write(buffer, 0, bytesRead);
                     }
-                });
-            } finally {
-                // Only close the converting stream; the try-with-resources owns the source.
-                if (pcmStream != audioStream) pcmStream.close();
-            }
+                    // A pass that produced nothing must not be restarted, or a file with no
+                    // frames would spin this thread at full speed forever.
+                    if (!producedThisPass) break;
+                } while (session.loop && !playback.isStopped());
+            });
+        } finally {
+            closeStreamQuietly(stream[0]);
+        }
+    }
+
+    /** A fresh decoded-PCM view of {@code audioData}, so each loop pass starts at sample 0. */
+    private static AudioInputStream openWavPcm(byte[] audioData, AudioFormat pcmFormat) throws Exception {
+        AudioInputStream source = AudioSystem.getAudioInputStream(
+                new BufferedInputStream(new ByteArrayInputStream(audioData)));
+        AudioFormat base = source.getFormat();
+        boolean alreadyPcm = base.getEncoding() == AudioFormat.Encoding.PCM_SIGNED
+                && base.getSampleSizeInBits() == 16;
+        // Closing the converting stream closes the source it wraps, so the caller owns one thing.
+        return alreadyPcm ? source : AudioSystem.getAudioInputStream(pcmFormat, source);
+    }
+
+    private static void closeStreamQuietly(AutoCloseable stream) {
+        if (stream == null) return;
+        try {
+            stream.close();
+        } catch (Exception ignored) {
+            // In-memory stream; there is no OS handle to leak and nothing a caller could do.
         }
     }
 
@@ -310,51 +420,15 @@ public class AudioManager {
         // rather than calling level.getNearestPlayer() from a background thread, which
         // would cause ConcurrentModificationException on ClientLevel's player list.
         if (!localPlayerPosValid) return;
-        double px = localPlayerX, py = localPlayerY, pz = localPlayerZ;
 
-        float linearFactor;
-        if (playback.getRangePos1() != null && playback.getRangePos2() != null) {
-            BlockPos rp1 = playback.getRangePos1();
-            BlockPos rp2 = playback.getRangePos2();
-            AABB rangeBounds = new AABB(
-                    Math.min(rp1.getX(), rp2.getX()), Math.min(rp1.getY(), rp2.getY()), Math.min(rp1.getZ(), rp2.getZ()),
-                    Math.max(rp1.getX(), rp2.getX()) + 1, Math.max(rp1.getY(), rp2.getY()) + 1, Math.max(rp1.getZ(), rp2.getZ()) + 1);
-
-            // Use attenuation settings captured at playback start (thread-safe, no level access)
-            boolean attenuationMode = playback.isAttenuationMode();
-            int[] ranges = playback.getAttenuationRanges();
-
-            if (rangeBounds.contains(px, py, pz)) {
-                linearFactor = 1.0f;
-            } else if (!attenuationMode) {
-                linearFactor = 0.0f;
-            } else {
-                // Per-direction attenuation: indices [East,West,Up,Down,South,North]
-                double factorX = computeAxisFactor(px, rangeBounds.minX, rangeBounds.maxX, ranges[1], ranges[0]);
-                double factorY = computeAxisFactor(py, rangeBounds.minY, rangeBounds.maxY, ranges[3], ranges[2]);
-                double factorZ = computeAxisFactor(pz, rangeBounds.minZ, rangeBounds.maxZ, ranges[5], ranges[4]);
-                linearFactor = (float) Math.max(0.0, factorX * factorY * factorZ);
-            }
-        } else {
-            // No range defined: distance from the device itself.
-            double dx = px - (playback.getPos().getX() + 0.5);
-            double dy = py - (playback.getPos().getY() + 0.5);
-            double dz = pz - (playback.getPos().getZ() + 0.5);
-            double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (playback.isAttenuationMode()) {
-                // Attenuation on: fade over the device's configured range (the server fills
-                // the ranges array with it when no board is inserted). This branch used to
-                // ignore the mode entirely and always fall through to the 160-block curve,
-                // which at normal distances is inaudible - the toggle appeared to do nothing.
-                int[] ranges = playback.getAttenuationRanges();
-                int range = (ranges != null && ranges.length > 0) ? ranges[0] : 8;
-                linearFactor = range <= 0 ? 0.0f : (float) Math.max(0.0, 1.0 - dist / range);
-            } else {
-                // Attenuation off: the old gentle ambient falloff.
-                float maxSearchDistance = 160.0f;
-                linearFactor = 1.0f - Math.min(1.0f, Math.max(0.0f, (float) dist / maxSearchDistance));
-            }
-        }
+        // The same predicate the server uses to decide whether a joining player gets sent this
+        // audio at all. Kept as one implementation on purpose: two copies would drift into
+        // shipping megabytes to someone who hears silence, or leaving a player standing inside
+        // an audible box with nothing playing, and neither shows up as an error. See SpatialGain.
+        float linearFactor = SpatialGain.linearGain(
+                localPlayerX, localPlayerY, localPlayerZ,
+                playback.getPos(), playback.getRangePos1(), playback.getRangePos2(),
+                playback.isAttenuationMode(), playback.getAttenuationRanges());
 
         applyGain(playback, linearFactor);
     }
@@ -374,18 +448,6 @@ public class AudioManager {
             // Hardware gain control not available — use software gain applied during PCM write
             playback.setSoftwareGain(linearFactor);
         }
-    }
-
-    /** Compute linear fade factor for one axis. */
-    private static double computeAxisFactor(double p, double min, double max, int negRange, int posRange) {
-        if (p < min) {
-            double dist = min - p;
-            return negRange <= 0 ? 0.0 : Math.max(0.0, 1.0 - dist / negRange);
-        } else if (p > max) {
-            double dist = p - max;
-            return posRange <= 0 ? 0.0 : Math.max(0.0, 1.0 - dist / posRange);
-        }
-        return 1.0;
     }
 
     /**
@@ -427,18 +489,21 @@ public class AudioManager {
         final BlockPos rangePos2;
         final boolean attenuationMode;
         final int[] attenuationRanges;
+        /** Restart at the top on reaching the end, rather than ending. */
+        final boolean loop;
 
         private volatile boolean cancelled;
         private volatile AudioPlayback playback;
 
         PlaybackSession(BlockPos pos, long playbackId, BlockPos rangePos1, BlockPos rangePos2,
-                        boolean attenuationMode, int[] attenuationRanges) {
+                        boolean attenuationMode, int[] attenuationRanges, boolean loop) {
             this.pos = pos;
             this.playbackId = playbackId;
             this.rangePos1 = rangePos1;
             this.rangePos2 = rangePos2;
             this.attenuationMode = attenuationMode;
             this.attenuationRanges = Arrays.copyOf(attenuationRanges, 6);
+            this.loop = loop;
         }
 
         boolean isCancelled() {

@@ -2,6 +2,7 @@ package com.spatialaudiosystem.server;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.audio.AudioStorage;
+import com.spatialaudiosystem.audio.PlaybackDelivery;
 import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.network.AudioUploadChunkPayload;
 import net.minecraft.server.MinecraftServer;
@@ -21,11 +22,23 @@ public class ServerTickHandler {
     private static final int CLEANUP_INTERVAL_TICKS = 6000; // 5 minutes
     private static int tickCounter = 0;
 
+    /** How often active sounds are offered to players who can hear them but do not have them. */
+    private static final int DELIVERY_SWEEP_TICKS = 20;     // 1 second
+    private static int sweepCounter = 0;
+
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         // Abandoned transfers hold up to 10 MB each, so they expire on the clock rather
         // than waiting for the same player to start another upload.
         AudioUploadChunkPayload.sweepExpired();
+
+        // Delivery runs on a timer rather than from join / dimension-change events, because the
+        // set of players who can hear a sound also changes when nobody fires an event at all —
+        // walking into range is the case three separate handlers would have missed.
+        if (++sweepCounter >= DELIVERY_SWEEP_TICKS) {
+            sweepCounter = 0;
+            PlaybackDelivery.sweep(event.getServer());
+        }
 
         tickCounter++;
         if (tickCounter < CLEANUP_INTERVAL_TICKS) return;
@@ -42,6 +55,42 @@ public class ServerTickHandler {
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         AudioUploadChunkPayload.cancelUpload(event.getEntity().getUUID());
+        PlaybackSessionRegistry.forgetPlayer(event.getEntity().getUUID());
+    }
+
+    // The events below can leave a client holding no sounds while the server still believes it
+    // was sent them. The client stops and forgets every playback when its level is replaced
+    // (ClientLifecycleHandler, on LoggingOut and LevelEvent.Unload); without dropping the
+    // delivery record the sweep would consider the player already served, and they would never
+    // hear a sound that is still playing.
+    //
+    // Respawn is included, and cannot be left to PlayerChangedDimensionEvent: PlayerList.respawn
+    // fires only firePlayerRespawnEvent, and the single call site of firePlayerChangedDimensionEvent
+    // is ServerPlayer.changeDimension, which a death respawn never enters. So a player who
+    // respawns into another dimension has their client level replaced — and their sounds
+    // stopped — with no dimension-change event to notice it.
+    //
+    // A same-dimension respawn does not replace the client level, so forgetting there is
+    // unnecessary. It is also harmless, which is why the dimension is not tested: the only
+    // replayable sounds are endless ones, and re-sending one to a client that still has it makes
+    // that client cancel its previous worker, which — being a loop — never reports completion
+    // (AudioManager). The cost is one repeat transfer to one player. When one-shots were
+    // replayable this was not harmless: the report arrived under the unchanged playback id and
+    // ended the sound for everyone.
+
+    @SubscribeEvent
+    public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        PlaybackSessionRegistry.forgetPlayer(event.getEntity().getUUID());
+    }
+
+    @SubscribeEvent
+    public static void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        PlaybackSessionRegistry.forgetPlayer(event.getEntity().getUUID());
+    }
+
+    @SubscribeEvent
+    public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        PlaybackSessionRegistry.forgetPlayer(event.getEntity().getUUID());
     }
 
     @SubscribeEvent

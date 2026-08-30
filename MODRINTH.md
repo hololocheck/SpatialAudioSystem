@@ -16,7 +16,7 @@ through the BelugaExperience design workflow on top of the Manta UI runtime.
 
 - **Play your own audio** — mp3 / ogg / wav from your PC, up to 10 MB per file
 - **3D range control** — the Range Board defines a box where the sound is audible, with per-direction fade-out
-- **♪ Schedule** — queue up to 6 media and play them in order, each repeating 1–10 times
+- **♪ Schedule** — queue up to 6 media and play them in order, each repeating 1–10 times or **∞** for continuous ambience
 - **Cover art** — artwork embedded in the audio file is shown on the device screens
 - **Redstone automation** — the Playback Device fires on a rising edge, for stations, cutscenes, and ambient triggers
 - **Access modes** — the first player to open a device becomes its owner; switch it between public and private

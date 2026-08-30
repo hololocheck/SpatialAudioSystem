@@ -49,6 +49,15 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     private static final int PLAYING_HL_BG = 0x224FC3F7;
     private static final int PLAYING_HL_BORDER = 0xFF4FC3F7;
 
+    /**
+     * Multiplier prefix for a play count, as in ×3. Content typography rather than a control
+     * symbol (R4.23.1), and the single literal the control-glyph ledger carries for this file —
+     * every count is built from it so the ledger does not have to grow an entry per value.
+     */
+    private static final String TIMES = "×";
+    /** Shown in place of the number when an entry plays endlessly. */
+    private static final String ENDLESS_COUNT = "∞";
+
     private static java.lang.reflect.Field SLOT_X_FIELD;
     private static java.lang.reflect.Field SLOT_Y_FIELD;
     static {
@@ -226,7 +235,10 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                 }
                 case "pb-count-display": {
                     int idx = JsonLayoutEngine.currentRepeatIndex();
-                    return idx >= 0 ? "×" + be.getPlayCount(idx) : "";
+                    if (idx < 0) return "";
+                    return TIMES + (be.isLoopEntry(idx)
+                            ? ENDLESS_COUNT
+                            : String.valueOf(be.getPlayCount(idx)));
                 }
                 case "pb-media-info": {
                     int idx = JsonLayoutEngine.currentRepeatIndex();

@@ -2,6 +2,52 @@
 
 > Japanese version: [CHANGELOG.md](CHANGELOG.md)
 
+## [1.0.6] - 2026-08-29
+
+### Added
+
+- **Endless playback (∞)**
+  Scroll a schedule entry's play count one step past 10 and it becomes **∞**, which plays until
+  you stop it — for continuous ambience such as fluorescent hum, ventilation or machinery, held
+  for as long as the server is up. The loop runs on each client, on audio it already holds, so
+  **repeating costs no further network traffic** (the file transfers once per listener). The loop
+  is restored automatically after a server restart or a chunk reload. An entry set to ∞ is the
+  last thing that device plays: the schedule does not advance past it.
+- **Players who arrive later now hear an endless sound that is already playing**
+  Joining a server, arriving from another dimension, or simply walking into range all start an
+  ∞ sound for you, **provided you are somewhere it can be heard**. Players outside the audible
+  region are not sent it, so nothing is transferred for a sound nobody could hear.
+
+  This applies to ∞ sounds only. A one-shot still behaves exactly as before — sent once, to the
+  players present when it starts. Restarting a short sound from the top for someone who arrived
+  halfway through would put them out of sync with everyone still hearing the original, which is
+  worse than not hearing it.
+- **`SasApi.playAudio(..., boolean loop)`** added to the public API. The existing five-argument
+  form is unchanged and behaves as `loop = false`.
+
+### Bug Fixes
+
+- **Fixed players who joined during playback hearing nothing**
+  Audio was sent only to the players who were online at the instant a sound started, and there
+  was no path that sent it to anyone afterwards. Players who joined, or who arrived from another
+  dimension, received neither the metadata nor the audio, and the failure was silence rather
+  than an error, so it was invisible from every other client.
+- **Fixed a schedule stopping permanently on an empty server**
+  The only thing that advanced a sequence was the end-of-playback report, which is sent by a
+  client. With nobody online no report ever arrived and the sequence stayed where it was. The
+  block entity's own timeout reset the device without telling the sequence, so the one path that
+  could have recovered it did not. Endless playback does not depend on that round trip at all.
+
+### Internal
+
+- The client's volume calculation and the server's range check are now one implementation
+  (`SpatialGain`). Two copies would drift into either shipping audio to someone who hears
+  silence, or leaving a player inside an audible box with nothing playing — neither of which
+  raises an error, so the disagreement is made structurally impossible instead.
+- A playback session now records what is playing where and who has not yet been sent it.
+- Added `SpatialGainTest`, `PlaybackLoopTest` and delivery coverage in
+  `PlaybackSessionRegistryTest`, with mutation controls in `scripts/playback.mutation.py`.
+
 ## [1.0.5] - 2026-08-01
 
 ### Major Changes

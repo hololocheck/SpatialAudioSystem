@@ -72,8 +72,11 @@ public record TestPlayRecordingPayload(BlockPos pos, boolean start) implements C
         }
 
         long playbackId = PlaybackSessionRegistry.begin(level, pos);
+        // A preview from the recording screen is one-shot, and deliberately not registered as
+        // replayable: it is a check on the medium you are holding, not a sound placed in the
+        // world for others to walk into.
         ClientPlayAudioPayload meta = new ClientPlayAudioPayload(
-                pos, playbackId, audio.length, format, null, null, false, NO_ATTENUATION);
+                pos, playbackId, audio.length, format, null, null, false, NO_ATTENUATION, false);
         for (ServerPlayer sp : level.players()) {
             PacketDistributor.sendToPlayer(sp, meta);
             ClientAudioChunkPayload.sendChunked(sp, pos, playbackId, audio);
