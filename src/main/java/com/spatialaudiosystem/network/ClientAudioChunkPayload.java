@@ -52,17 +52,29 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
         activeSessions.clear();
     }
 
-    /** Called when ClientPlayAudioPayload (metadata) arrives — prepare the reassembly buffer. */
+    /**
+     * Called when ClientPlayAudioPayload (metadata) arrives — prepare the reassembly buffer.
+     *
+     * @param receivedAtMillis when the metadata packet was decoded, by this clock. That is the
+     *                         instant the catch-up correction counts from, so it is taken where
+     *                         the packet arrived and not here: this runs on the main thread,
+     *                         which for a joining player is seconds behind the network.
+     */
     public static void prepareSession(BlockPos pos, long playbackId, int totalSize, String format,
                                        BlockPos rangePos1, BlockPos rangePos2,
                                        boolean attenuationMode, int[] attenuationRanges,
-                                       boolean loop, int startOffsetMillis, boolean synchronised) {
+                                       boolean loop, int startOffsetMillis, boolean synchronised,
+                                       long receivedAtMillis) {
         long now = System.currentTimeMillis();
-        activeSessions.entrySet().removeIf(e -> now - e.getValue().createdAt > SESSION_TIMEOUT_MS);
+        // Measured from when each session's handler ran, not from its packet's stamp: the
+        // stamp is earlier by the main thread's stall, and a window that counted from it
+        // would be shorter by exactly the stall this stamp exists to see past. Review found
+        // this on 2026-09-02, the same day the stamp was introduced.
+        activeSessions.entrySet().removeIf(e -> now - e.getValue().handledAt > SESSION_TIMEOUT_MS);
 
         activeSessions.put(pos, new DownloadSession(
                 playbackId, totalSize, format, rangePos1, rangePos2, attenuationMode,
-                attenuationRanges, loop, startOffsetMillis, synchronised));
+                attenuationRanges, loop, startOffsetMillis, synchronised, receivedAtMillis));
     }
 
     /**
@@ -192,18 +204,21 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
         /** See ClientPlayAudioPayload#synchronised. */
         final boolean synchronised;
         /**
-         * When the metadata arrived. Not final only so a test can move it: in a unit test the
-         * whole transfer is instant, so a mutation that hands over "now" instead of this lands
-         * inside the same millisecond window and no assertion can tell the two apart.
+         * When the metadata arrived: the packet's own decode stamp, not the moment this object
+         * was built. Not final only so a test can move it: in a unit test the whole transfer is
+         * instant, so a mutation that hands over "now" instead of this lands inside the same
+         * millisecond window and no assertion can tell the two apart.
          */
         long createdAt;
+        /** When this handler ran, by the main thread. The abandonment window counts from here. */
+        final long handledAt;
         /** Which indices have arrived. Counting receipts instead would let a repeated
          *  chunk hand a half-zero buffer to the decoder. */
         final BitSet received;
 
         DownloadSession(long playbackId, int totalSize, String format, BlockPos rangePos1, BlockPos rangePos2,
                         boolean attenuationMode, int[] attenuationRanges, boolean loop,
-                        int startOffsetMillis, boolean synchronised) {
+                        int startOffsetMillis, boolean synchronised, long receivedAtMillis) {
             this.playbackId = playbackId;
             this.buffer = new byte[totalSize];
             this.format = format;
@@ -214,7 +229,11 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
             this.loop = loop;
             this.startOffsetMillis = startOffsetMillis;
             this.synchronised = synchronised;
-            this.createdAt = System.currentTimeMillis();
+            // A stamp of zero is a caller that had none; "now" is the best it can do. A real
+            // packet always carries one, and a zero taken at face value would size a discard of
+            // fifty-odd years and land the listener at a random point of the loop.
+            this.createdAt = receivedAtMillis > 0 ? receivedAtMillis : System.currentTimeMillis();
+            this.handledAt = System.currentTimeMillis();
             this.received = new BitSet(chunkCountFor(totalSize));
         }
 

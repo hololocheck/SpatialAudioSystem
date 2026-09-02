@@ -127,13 +127,13 @@ public class AudioManager {
      */
     private static void reportCatchUp(PlaybackSession session, long usedMillis) {
         try {
-            // The same number that sized the skip, not a re-derivation: read the clock again and
-            // the report could disagree with the discard it claims to describe.
+            // The numbers the discard actually used, top-ups included, not a re-derivation: read
+            // the clock again and the report could disagree with the discard it describes.
             net.neoforged.neoforge.network.PacketDistributor.sendToServer(
                     new com.spatialaudiosystem.network.CatchUpReportPayload(
                             session.pos, session.playbackId,
                             (int) Math.min(Integer.MAX_VALUE, usedMillis),
-                            session.skipBytes));
+                            session.droppedBytes));
         } catch (Exception ignored) {
             // No connection, or a server without this mod. Neither is worth a stack trace on
             // the audio thread.
@@ -283,6 +283,12 @@ public class AudioManager {
 
             if (!playback.isStopped()) line.drain();
         } finally {
+            // Whatever closed the line -- the end of the sound, a stop, a supersede, a
+            // decoder failure -- a session that sized its discard reports once. Without this
+            // the three decoders disagreed: MP3 and WAV reach endOfPass after a stop, the OGG
+            // loop does not, and a listener stopped mid-catch-up left no line in the server's
+            // log, which reads there as "the client ignored the offset". Review, 2026-09-02.
+            if (session.skipSized) session.reportOnce();
             try {
                 line.stop();
                 line.close();
@@ -371,7 +377,7 @@ public class AudioManager {
         // writes, and the tests that exercise the writing exercise the sizing with it.
         session.sizeSkipOnce(line.getFormat());
         session.bytesThisPass += len;
-        if (session.skipBytes > 0) {
+        while (session.skipBytes > 0) {
             // No frame alignment here, deliberately. beginSkip already rounds the budget to a
             // frame, and every producer that reaches this method hands over whole frames --
             // AudioInputStream.read is specified to, and the two decoders write interleaved
@@ -381,10 +387,16 @@ public class AudioManager {
             // guard its comment claimed.
             int drop = (int) Math.min(session.skipBytes, len);
             session.skipBytes -= drop;
+            session.droppedBytes += drop;
             off += drop;
             len -= drop;
+            // The budget is spent, and the clock ran while it was being spent. What it ran
+            // by is audio this listener has also missed, so it goes on the budget too -- and
+            // the loop continues into the same buffer if there is any of it left.
+            if (session.skipBytes == 0) session.topUpSkip(line.getFormat());
             if (len <= 0) return;
         }
+        session.reportOnce();
         line.write(bytes, off, len);
     }
 
@@ -643,6 +655,22 @@ public class AudioManager {
         long skipBytes;
         /** PCM bytes the current pass has produced, discarded ones included. */
         long bytesThisPass;
+        /** PCM bytes discarded so far, top-ups included. What the report carries. */
+        long droppedBytes;
+        /** The offset this listener has really used: sized once, then topped up. */
+        long usedMillis;
+        /** When the budget was last sized, by {@link #clock}. */
+        private long sizedAtMillis;
+        /** Top-ups so far. Bounded, see {@link #topUpSkip}. */
+        int topUps;
+        private boolean reported;
+
+        /**
+         * The clock the catch-up reads. Static and package-private so a test can move time
+         * without a real decoder: the top-up is the wall time the discard took, and in a unit
+         * test a discard takes none, so with a real clock no assertion could see it.
+         */
+        static java.util.function.LongSupplier clock = System::currentTimeMillis;
 
         private volatile boolean cancelled;
         /** Replaced by a fresh delivery of the same sound; its end is not this one's to report. */
@@ -672,6 +700,8 @@ public class AudioManager {
             skipSized = true;
             long used = effectiveOffsetMillis();
             beginSkip(format, used);
+            usedMillis = used;
+            sizedAtMillis = clock.getAsLong();
             // Unconditional. The first version logged only when the offset was positive, which
             // silenced it for the one value it exists to identify: an offset that arrived as
             // zero is the leading explanation for "it played from the beginning", and gating on
@@ -681,9 +711,8 @@ public class AudioManager {
                     pos.getX(), pos.getY(), pos.getZ(), String.format("%016x", playbackId),
                     startOffsetMillis, used - startOffsetMillis, used,
                     format.getFrameRate(), format.getFrameSize(), skipBytes);
-            // And tell the server, because the log above is on this listener's machine and the
-            // listener who matters is somebody else. Sent once per playback, not per buffer.
-            reportCatchUp(this, used);
+            // The server is told in reportOnce, once the discard has run: the number that
+            // matters there is the offset as finally used, and it is not known yet.
         }
 
         /**
@@ -711,7 +740,7 @@ public class AudioManager {
          */
         long effectiveOffsetMillis() {
             if (!synchronised || startOffsetMillis <= 0) return startOffsetMillis;
-            return startOffsetMillis + Math.max(0, System.currentTimeMillis() - announcedAtMillis);
+            return startOffsetMillis + Math.max(0, clock.getAsLong() - announcedAtMillis);
         }
 
         /** Sizes the discard from the line's format and the offset this listener starts at. */
@@ -719,6 +748,49 @@ public class AudioManager {
             int frame = Math.max(1, format.getFrameSize());
             long bytes = (long) (offsetMillis / 1000.0 * format.getFrameRate()) * frame;
             skipBytes = Math.max(0, bytes - bytes % frame);
+        }
+
+        /** Top-ups are bounded so a decoder slower than the sound cannot chase the clock forever. */
+        static final int MAX_TOP_UPS = 8;
+
+        /**
+         * Puts the time the discard itself took onto the budget, once the budget is spent.
+         *
+         * <p>The budget is sized before the first byte is decoded, and decoding the part to
+         * discard takes real time -- a second or more of MP3 for a listener half a minute late,
+         * longer on a slow machine. The sound moves on during that time, so a listener started
+         * at the sized point is behind by exactly the discard's duration. Each top-up is that
+         * duration, and with a decoder faster than the sound the series converges: each round
+         * discards what the previous round took, which is a fraction of it. Bounded by
+         * {@link #MAX_TOP_UPS} so that a decoder slower than the sound starts late rather than
+         * never.
+         *
+         * <p>Only for a listener being corrected at all; everyone else has no budget to top up.
+         */
+        void topUpSkip(javax.sound.sampled.AudioFormat format) {
+            if (!synchronised || startOffsetMillis <= 0 || topUps >= MAX_TOP_UPS) return;
+            long now = clock.getAsLong();
+            long elapsed = now - sizedAtMillis;
+            sizedAtMillis = now;
+            if (elapsed <= 0) return;
+            topUps++;
+            usedMillis += elapsed;
+            beginSkip(format, elapsed);
+        }
+
+        /**
+         * Tells the server what this listener did, once, as the first audible byte is about to
+         * be written -- so the report carries the offset as it was finally used, top-ups
+         * included, not the first estimate. A pass that never reaches an audible byte reports
+         * from {@link #endOfPass} instead, so the server's log gets its line either way.
+         */
+        void reportOnce() {
+            if (reported) return;
+            reported = true;
+            SKIP_SIGNAL.info("caughtup pos={},{},{} id={} usedMs={} topUps={} droppedBytes={}",
+                    pos.getX(), pos.getY(), pos.getZ(), String.format("%016x", playbackId),
+                    usedMillis, topUps, droppedBytes);
+            reportCatchUp(this, usedMillis);
         }
 
         /**
@@ -732,6 +804,7 @@ public class AudioManager {
         void endOfPass() {
             if (skipBytes > 0 && bytesThisPass > 0) skipBytes %= bytesThisPass;
             bytesThisPass = 0;
+            if (skipSized) reportOnce();
         }
 
         boolean isCancelled() {

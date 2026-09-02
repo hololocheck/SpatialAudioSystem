@@ -92,7 +92,7 @@ public final class PlaybackDelivery {
         // Zero: these players are here for the start, so there is nothing for them to catch up on.
         ClientPlayAudioPayload meta = new ClientPlayAudioPayload(
                 pos, playbackId, audioData.length, format, rangePos1, rangePos2,
-                attenuationMode, attenuationRanges, loop, 0, true);
+                attenuationMode, attenuationRanges, loop, 0, true, 0L);
         for (ServerPlayer player : level.players()) {
             // Filtered for an endless sound only. A one-shot's completion is reported by a
             // client, and the schedule advances on that report -- so a one-shot that reached
@@ -210,12 +210,17 @@ public final class PlaybackDelivery {
                 pending.pos(), pending.playbackId(), audioData.length, replay.format(),
                 replay.rangePos1(), replay.rangePos2(),
                 replay.attenuationMode(), replay.attenuationRanges(), replay.loop(),
-                offsetMillis, true));
+                offsetMillis, true, 0L));
         ClientAudioChunkPayload.sendChunked(player, pending.pos(), pending.playbackId(), audioData);
         PlaybackSessionRegistry.markDelivered(
                 level.dimension(), pending.pos(), pending.playbackId(), player.getUUID());
-        SIGNAL.info("sent {} offset={}", describe(level, pending.pos(), pending.playbackId(),
+        // wallMs is the same age by the wall clock. The offset is ticks; the sound on every
+        // client is wall time; a server that lost ticks since the start sends an offset that
+        // is short by the loss. Logged so the next live test can measure that gap, which
+        // nothing has yet.
+        SIGNAL.info("sent {} offset={} wallMs={}", describe(level, pending.pos(), pending.playbackId(),
                 replay.loop(), player, replay.rangePos1(), replay.rangePos2(),
-                replay.attenuationMode(), replay.attenuationRanges(), "sweep"), offsetMillis);
+                replay.attenuationMode(), replay.attenuationRanges(), "sweep"), offsetMillis,
+                System.currentTimeMillis() - pending.startedAtMillis());
     }
 }

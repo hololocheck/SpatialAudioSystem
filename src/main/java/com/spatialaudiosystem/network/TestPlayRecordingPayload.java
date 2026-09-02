@@ -81,7 +81,7 @@ public record TestPlayRecordingPayload(BlockPos pos, boolean start) implements C
                 // because it is a check on the medium rather than a sound already running.
                 // Not synchronised: a preview is a check on the medium in your hand, so it
                 // starts at the top rather than wherever a shared sound has got to.
-                false, 0, false);
+                false, 0, false, 0L);
         for (ServerPlayer sp : level.players()) {
             PacketDistributor.sendToPlayer(sp, meta);
             ClientAudioChunkPayload.sendChunked(sp, pos, playbackId, audio);

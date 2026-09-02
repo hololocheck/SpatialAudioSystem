@@ -1,9 +1,15 @@
 package com.spatialaudiosystem.audio;
 
 import com.spatialaudiosystem.audio.AudioManager.PlaybackSession;
+import com.spatialaudiosystem.network.CatchUpReportPayload;
 import net.minecraft.core.BlockPos;
+import net.neoforged.neoforge.network.PacketDistributor;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.SourceDataLine;
@@ -14,6 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 /**
@@ -36,6 +45,22 @@ class PlaybackCatchUpTest {
 
     private final List<Integer> written = new ArrayList<>();
     private final SourceDataLine line = mock(SourceDataLine.class);
+
+    /**
+     * The clock the session reads, moved by hand. A real discard takes time and a test's
+     * takes none, so the top-up -- which is that time -- would be invisible to a real clock.
+     */
+    private final long[] now = {1_000_000L};
+
+    @BeforeEach
+    void fakeClock() {
+        PlaybackSession.clock = () -> now[0];
+    }
+
+    @AfterEach
+    void realClock() {
+        PlaybackSession.clock = System::currentTimeMillis;
+    }
 
     private PlaybackSession sessionSkipping(int offsetMillis) {
         when(line.getFormat()).thenReturn(CD);
@@ -136,9 +161,181 @@ class PlaybackCatchUpTest {
     }
 
     /** A session whose metadata arrived `ago` milliseconds back, the way a real transfer does. */
-    private static PlaybackSession announced(int offsetMillis, long ago, boolean synchronised) {
+    private PlaybackSession announced(int offsetMillis, long ago, boolean synchronised) {
         return new PlaybackSession(POS, 1L, null, null, true, new int[6], false,
-                offsetMillis, synchronised, System.currentTimeMillis() - ago);
+                offsetMillis, synchronised, now[0] - ago);
+    }
+
+    /** A late, synchronised listener whose metadata arrived just now, writing to the line. */
+    private PlaybackSession sessionCatchingUp(int offsetMillis) {
+        when(line.getFormat()).thenReturn(CD);
+        when(line.write(any(), anyInt(), anyInt())).thenAnswer(call -> {
+            written.add(call.getArgument(2));
+            return call.<Integer>getArgument(2);
+        });
+        return new PlaybackSession(POS, 1L, null, null, true, new int[6], false,
+                offsetMillis, true, now[0]);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-014: the time the discard itself takes is discarded too")
+    void theDiscardsOwnDurationIsDiscarded() {
+        // Measured on a live server on 2026-09-02: the sized budget put the listener at the
+        // right point as of the moment it was sized, and then decoding half a minute to throw
+        // it away took real time, which the sound did not wait for.
+        PlaybackSession session = sessionCatchingUp(1_000);
+        feed(session, BYTES_PER_SECOND / 2);
+        now[0] += 500;
+        feed(session, BYTES_PER_SECOND / 2);
+        assertThat(written).as("the budget is spent, but spending it took half a second").isEmpty();
+        feed(session, BYTES_PER_SECOND / 2);
+        assertThat(written).as("that half second is missed audio too").isEmpty();
+        feed(session, 4_000);
+        assertThat(written).containsExactly(4_000);
+        assertThat(session.usedMillis).as("sized at one second, topped up by half").isEqualTo(1_500);
+        assertThat(session.topUps).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-014: a top-up that lands inside a buffer plays only what follows it")
+    void aTopUpInsideABufferPlaysOnlyItsTail() {
+        PlaybackSession session = sessionCatchingUp(1_000);
+        feed(session, 1_000);
+        now[0] += 500;
+        // One buffer holding the rest of the budget, the whole top-up, and four thousand
+        // bytes more. Stopping the discard at the first exhaustion would play the top-up.
+        feed(session, (BYTES_PER_SECOND - 1_000) + BYTES_PER_SECOND / 2 + 4_000);
+        assertThat(written).containsExactly(4_000);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-014: a decoder slower than the sound starts late rather than never")
+    void aSlowDecoderStartsLateRatherThanNever() {
+        PlaybackSession session = sessionCatchingUp(1_000);
+        feed(session, 0);
+        // Every round the discard takes half as long again as the audio it discards, so each
+        // top-up is larger than the last. Unbounded, this listener would never start.
+        for (int round = 0; round < PlaybackSession.MAX_TOP_UPS + 2; round++) {
+            long budget = session.skipBytes;
+            assertThat(budget).as("round " + round + " has a budget to spend").isPositive();
+            now[0] += budget * 1_000 / BYTES_PER_SECOND * 3 / 2;
+            feed(session, (int) budget);
+            if (session.skipBytes == 0) break;
+        }
+        feed(session, 4_000);
+        assertThat(written).as("bounded: the listener starts, late").containsExactly(4_000);
+        assertThat(session.topUps).isEqualTo(PlaybackSession.MAX_TOP_UPS);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-014: a listener present from the start is never topped up")
+    void aListenerPresentFromTheStartIsNotToppedUp() {
+        PlaybackSession session = sessionCatchingUp(0);
+        feed(session, 4_096);
+        now[0] += 5_000;
+        feed(session, 4_096);
+        assertThat(written).as("no budget, so nothing to top up, whatever the clock did")
+                .containsExactly(4_096, 4_096);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-014: a preview is not topped up either")
+    void aPreviewIsNotToppedUp() {
+        // Unsynchronised with an offset: the shape a preview would have if it ever carried
+        // one. The correction is off for it, and so is the top-up that belongs to it.
+        PlaybackSession session = sessionSkipping(1_000);
+        feed(session, BYTES_PER_SECOND / 2);
+        now[0] += 500;
+        feed(session, BYTES_PER_SECOND / 2 + 4_000);
+        assertThat(written).containsExactly(4_000);
+        assertThat(session.topUps).isZero();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-014: the server is told the offset as finally used, once")
+    void theReportCarriesTheOffsetAsFinallyUsed() {
+        try (MockedStatic<PacketDistributor> wire = mockStatic(PacketDistributor.class)) {
+            PlaybackSession session = sessionCatchingUp(1_000);
+            feed(session, BYTES_PER_SECOND / 2);
+            now[0] += 500;
+            feed(session, BYTES_PER_SECOND / 2);
+            // Reporting at sizing would say one second; the listener really used one and a
+            // half, and the server's log is where the two halves of the story are compared.
+            wire.verify(() -> PacketDistributor.sendToServer(any(CatchUpReportPayload.class)), never());
+
+            feed(session, BYTES_PER_SECOND / 2 + 4_000);
+            ArgumentCaptor<CatchUpReportPayload> report = ArgumentCaptor.forClass(CatchUpReportPayload.class);
+            wire.verify(() -> PacketDistributor.sendToServer(report.capture()));
+            assertThat(report.getValue().usedMillis()).isEqualTo(1_500);
+            assertThat(report.getValue().skipBytes())
+                    .as("what was discarded, top-up included")
+                    .isEqualTo(BYTES_PER_SECOND + BYTES_PER_SECOND / 2L);
+
+            feed(session, 4_000);
+            wire.verify(() -> PacketDistributor.sendToServer(any(CatchUpReportPayload.class)), times(1));
+        }
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-014: every decoder reports when its line closes, however it closed")
+    void everyDecoderReportsWhenTheLineCloses() throws Exception {
+        // runOnLine needs a real output line, so the rule is read rather than run: the report
+        // sits in the finally that closes the line, ahead of the close, for all three decoders
+        // at once. The OGG loop has no path to endOfPass on a stop, so without this a listener
+        // stopped mid-catch-up left no line in the server's log -- review, 2026-09-02.
+        java.nio.file.Path src = null;
+        for (java.nio.file.Path base = java.nio.file.Paths.get("").toAbsolutePath();
+             base != null; base = base.getParent()) {
+            java.nio.file.Path c = base.resolve(
+                    "src/main/java/com/spatialaudiosystem/audio/AudioManager.java");
+            if (java.nio.file.Files.isRegularFile(c)) { src = c; break; }
+        }
+        assertThat(src).as("source not found from " + java.nio.file.Paths.get("").toAbsolutePath())
+                .isNotNull();
+        String text = java.nio.file.Files.readString(src, java.nio.charset.StandardCharsets.UTF_8);
+        int open = text.indexOf("private void runOnLine(");
+        assertThat(open).isPositive();
+        String method = text.substring(open, text.indexOf("private void streamMp3(", open));
+        int finallyAt = method.indexOf("} finally {");
+        assertThat(finallyAt).isPositive();
+        String closing = method.substring(finallyAt);
+        // The whole statement, predicate included. Presence and order alone were satisfied
+        // by "if (false) session.reportOnce();" -- the second reading found the recorded run
+        // in which only a tripwire on that literal went red -- and any other predicate that
+        // never holds would have passed the same way.
+        String statement = "if (session.skipSized) session.reportOnce();";
+        assertThat(closing.indexOf(statement))
+                .as("a sized session reports in the finally, before the line is stopped")
+                .isPositive()
+                .isLessThan(closing.indexOf("line.stop()"));
+        // "Every decoder" holds only while every decoder opens its line through runOnLine.
+        for (String decoder : new String[]{"streamMp3", "streamOgg", "streamWav"}) {
+            int at = text.indexOf("private void " + decoder + "(");
+            assertThat(at).as(decoder).isPositive();
+            String body = text.substring(at, text.indexOf("\n    private ", at + 1));
+            assertThat(body).as(decoder + " writes through runOnLine").contains("runOnLine(session,");
+            assertThat(body).as(decoder + " opens no line of its own").doesNotContain("AudioSystem.getLine(");
+        }
+        // And file-wide, so a fourth decoder that opened its own line would go red here without
+        // anyone remembering to add its name above: runOnLine's is the only line ever opened.
+        assertThat(text.split("AudioSystem\\.getLine\\(", -1).length - 1)
+                .as("exactly one place opens a line, and it is runOnLine")
+                .isEqualTo(1);
+        assertThat(text).doesNotContain("getSourceDataLine(");
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-014: a pass that stays inside the offset still reports")
+    void anUnheardPassStillReports() {
+        try (MockedStatic<PacketDistributor> wire = mockStatic(PacketDistributor.class)) {
+            // A one-second sound, ten seconds late: nothing of it is audible, and the server
+            // still gets its line, or a silent listener and a listener who never received the
+            // sound would look the same in the log.
+            PlaybackSession session = sessionCatchingUp(10_000);
+            feed(session, BYTES_PER_SECOND);
+            session.endOfPass();
+            wire.verify(() -> PacketDistributor.sendToServer(any(CatchUpReportPayload.class)));
+        }
     }
 
     @Test

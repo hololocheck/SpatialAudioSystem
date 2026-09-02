@@ -71,19 +71,28 @@ public final class PlaybackSessionRegistry {
          * finished before they arrived begins again for them alone.
          */
         final long startedAtGameTime;
+        /**
+         * The same instant by the wall clock. Logged beside the tick-derived offset, not
+         * used for it: the sound plays in wall time on every client, so when the server
+         * loses ticks the two disagree, and the log is where that shows before it is acted
+         * on.
+         */
+        final long startedAtMillis;
         final Set<UUID> delivered = ConcurrentHashMap.newKeySet();
         /** Players whose client has reported what it did with the offset. One report each. */
         final Set<UUID> reported = ConcurrentHashMap.newKeySet();
 
-        Session(long id, Replay replay, long startedAtGameTime) {
+        Session(long id, Replay replay, long startedAtGameTime, long startedAtMillis) {
             this.id = id;
             this.replay = replay;
             this.startedAtGameTime = startedAtGameTime;
+            this.startedAtMillis = startedAtMillis;
         }
     }
 
     /** An active sound a particular player has not been sent yet. */
-    public record Pending(BlockPos pos, long playbackId, Replay replay, long startedAtGameTime) {}
+    public record Pending(BlockPos pos, long playbackId, Replay replay, long startedAtGameTime,
+                          long startedAtMillis) {}
 
     private static final Map<GlobalPos, Session> current = new ConcurrentHashMap<>();
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -102,7 +111,7 @@ public final class PlaybackSessionRegistry {
     public static long begin(ServerLevel level, BlockPos pos, Replay replay) {
         long id = newId();
         current.put(GlobalPos.of(level.dimension(), pos),
-                new Session(id, replay, level.getGameTime()));
+                new Session(id, replay, level.getGameTime(), System.currentTimeMillis()));
         return id;
     }
 
@@ -163,7 +172,8 @@ public final class PlaybackSessionRegistry {
             if (!e.getKey().dimension().equals(dim)) continue;
             Session s = e.getValue();
             if (s.replay == null || s.delivered.contains(playerId)) continue;
-            pending.add(new Pending(e.getKey().pos(), s.id, s.replay, s.startedAtGameTime));
+            pending.add(new Pending(e.getKey().pos(), s.id, s.replay, s.startedAtGameTime,
+                    s.startedAtMillis));
         }
         return pending;
     }

@@ -571,7 +571,7 @@ class PlaybackLoopTest {
             ClientPlayAudioPayload sent = new ClientPlayAudioPayload(
                     new BlockPos(4, 64, -9), 0x0123456789ABCDEFL, 4096, "ogg",
                     new BlockPos(1, 2, 3), new BlockPos(4, 5, 6),
-                    true, new int[]{8, 7, 6, 5, 4, 3}, loop, 0, true);
+                    true, new int[]{8, 7, 6, 5, 4, 3}, loop, 0, true, 0L);
 
             FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
             ClientPlayAudioPayload.STREAM_CODEC.encode(buf, sent);

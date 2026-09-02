@@ -37,7 +37,8 @@ class ClientDownloadHandoffTest {
     private static void announce(int totalSize, boolean loop, int offsetMillis) {
         ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, totalSize, "wav",
                 new BlockPos(1, 2, 3), new BlockPos(4, 5, 6),
-                true, new int[]{8, 8, 8, 8, 8, 8}, loop, offsetMillis, true);
+                true, new int[]{8, 8, 8, 8, 8, 8}, loop, offsetMillis, true,
+                System.currentTimeMillis());
     }
 
     private static byte[] audio(int size) {
@@ -123,12 +124,146 @@ class ClientDownloadHandoffTest {
             clear();
             byte[] data = audio(64);
             ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, data.length, "wav",
-                    null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, sync);
+                    null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, sync,
+                    System.currentTimeMillis());
             ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 1, data);
             // False here turns the correction off entirely, which is the preview's behaviour
             // applied to a world sound -- and is indistinguishable from the bug it fixed.
             assertThat(ClientAudioChunkPayload.readyFor(POS).synchronised()).isEqualTo(sync);
         }
+    }
+
+    private static ClientPlayAudioPayload playPayload(long receivedAtMillis) {
+        return new ClientPlayAudioPayload(POS, PLAYBACK_ID, 64, "wav", null, null,
+                true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, receivedAtMillis);
+    }
+
+    private static byte[] wireBytes(ClientPlayAudioPayload payload) {
+        io.netty.buffer.ByteBuf buf = io.netty.buffer.Unpooled.buffer();
+        ClientPlayAudioPayload.STREAM_CODEC.encode(new net.minecraft.network.FriendlyByteBuf(buf), payload);
+        byte[] bytes = new byte[buf.readableBytes()];
+        buf.readBytes(bytes);
+        return bytes;
+    }
+
+    @Test
+    @DisplayName("SAS-NET-007: the announcement time is the packet's own stamp, not the handler's")
+    void theAnnouncementTimeIsThePacketsStamp() {
+        // The handler runs on the main thread, which for a player who has just joined is
+        // seconds behind the network. Measured on a live server on 2026-09-02: 6.7 s, and
+        // the listener started that far behind everyone else.
+        byte[] data = audio(64);
+        long stamp = 1_700_000_000_000L;
+        ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, data.length, "wav",
+                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, stamp);
+        ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 1, data);
+        assertThat(ClientAudioChunkPayload.readyFor(POS).announcedAtMillis()).isEqualTo(stamp);
+    }
+
+    @Test
+    @DisplayName("SAS-NET-007: a caller without a stamp is taken as now, not as 1970")
+    void aMissingStampMeansNow() {
+        byte[] data = audio(64);
+        long before = System.currentTimeMillis();
+        ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, data.length, "wav",
+                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, 0L);
+        ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 1, data);
+        // Taken at face value, a zero stamp sizes a discard of fifty-odd years.
+        assertThat(ClientAudioChunkPayload.readyFor(POS).announcedAtMillis())
+                .isBetween(before, System.currentTimeMillis());
+    }
+
+    @Test
+    @DisplayName("SAS-NET-007: a stalled handler does not shorten the transfer's window")
+    void aStalledHandlerDoesNotShortenTheTransferWindow() {
+        // The stamp is earlier than the handler by the main thread's stall. The abandonment
+        // window must count from the handler, or a transfer announced during a long stall is
+        // evicted by the next announcement while its chunks are still arriving -- and its
+        // chunks then log "without active session" and the sound never plays.
+        byte[] data = audio(64);
+        long stalledStamp = System.currentTimeMillis() - 40_000;
+        ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, data.length, "wav",
+                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, stalledStamp);
+        // Another sound's announcement runs the eviction sweep.
+        ClientAudioChunkPayload.prepareSession(new BlockPos(9, 9, 9), PLAYBACK_ID + 7, 16, "wav",
+                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, 0, true, System.currentTimeMillis());
+        assertThat(ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 1, data))
+                .as("the transfer announced during the stall is still accepting chunks")
+                .isTrue();
+        assertThat(ClientAudioChunkPayload.readyFor(POS).announcedAtMillis())
+                .as("and it still corrects from the stamp")
+                .isEqualTo(stalledStamp);
+    }
+
+    @Test
+    @DisplayName("SAS-NET-007: the chunk handler hands the stamp, offset and flag to the player")
+    void theChunkHandlerHandsTheStampToThePlayer() throws Exception {
+        // The last hop: Ready -> playAudio, inside handle, which needs a live context and is
+        // run by nothing. A clock reading or a literal there compiles and leaves every test
+        // green while the live symptom returns in full -- found by review on 2026-09-02.
+        String text = sourceText("src/main/java/com/spatialaudiosystem/network/ClientAudioChunkPayload.java");
+        int handle = text.indexOf("public static void handle(ClientAudioChunkPayload");
+        assertThat(handle).isPositive();
+        String body = text.substring(handle, text.indexOf("public static void sendChunked(", handle));
+        assertThat(body).contains("ready.startOffsetMillis(), ready.synchronised(), ready.announcedAtMillis()");
+        assertThat(body).doesNotContain("currentTimeMillis");
+    }
+
+    /** The named source file, found by walking up from wherever the test runner started. */
+    private static String sourceText(String relative) throws Exception {
+        for (java.nio.file.Path base = java.nio.file.Paths.get("").toAbsolutePath();
+             base != null; base = base.getParent()) {
+            java.nio.file.Path c = base.resolve(relative);
+            if (java.nio.file.Files.isRegularFile(c)) {
+                return java.nio.file.Files.readString(c, java.nio.charset.StandardCharsets.UTF_8);
+            }
+        }
+        throw new AssertionError("source not found from " + java.nio.file.Paths.get("").toAbsolutePath());
+    }
+
+    @Test
+    @DisplayName("SAS-NET-007: the play payload stamps its arrival as it is decoded")
+    void thePlayPayloadStampsItsArrivalWhenDecoded() {
+        io.netty.buffer.ByteBuf buf = io.netty.buffer.Unpooled.buffer();
+        net.minecraft.network.FriendlyByteBuf wire = new net.minecraft.network.FriendlyByteBuf(buf);
+        ClientPlayAudioPayload.STREAM_CODEC.encode(wire, playPayload(0L));
+        long before = System.currentTimeMillis();
+        ClientPlayAudioPayload back = ClientPlayAudioPayload.STREAM_CODEC.decode(wire);
+        // Decoding is the one step that runs on the network thread, so it is the one step
+        // whose clock reading is the arrival.
+        assertThat(back.receivedAtMillis()).isBetween(before, System.currentTimeMillis());
+        assertThat(back.startOffsetMillis()).isEqualTo(OFFSET_MS);
+    }
+
+    @Test
+    @DisplayName("SAS-NET-007: the stamp is this client's clock, so it is not on the wire")
+    void theStampIsNotOnTheWire() {
+        // Two clocks on two machines have nothing to say to each other; a stamp that crossed
+        // the wire would be read against the wrong one.
+        assertThat(wireBytes(playPayload(1_700_000_000_000L))).isEqualTo(wireBytes(playPayload(0L)));
+    }
+
+    @Test
+    @DisplayName("SAS-NET-007: the handler passes the packet's stamp on, not a reading of its own")
+    void theHandlerPassesThePacketsStampOn() throws Exception {
+        // handle needs a live context, so its one line is read rather than run. The stamp is
+        // the payload's field; "System.currentTimeMillis()" here would be the handler's own
+        // reading, taken after the stall the stamp exists to see past.
+        java.nio.file.Path src = null;
+        for (java.nio.file.Path base = java.nio.file.Paths.get("").toAbsolutePath();
+             base != null; base = base.getParent()) {
+            java.nio.file.Path c = base.resolve(
+                    "src/main/java/com/spatialaudiosystem/network/ClientPlayAudioPayload.java");
+            if (java.nio.file.Files.isRegularFile(c)) { src = c; break; }
+        }
+        assertThat(src).as("source not found from " + java.nio.file.Paths.get("").toAbsolutePath())
+                .isNotNull();
+        String text = java.nio.file.Files.readString(src, java.nio.charset.StandardCharsets.UTF_8);
+        int handle = text.indexOf("public static void handle(");
+        assertThat(handle).isPositive();
+        String body = text.substring(handle, text.indexOf("@Override", handle));
+        assertThat(body).contains("payload.receivedAtMillis");
+        assertThat(body).doesNotContain("currentTimeMillis");
     }
 
     @Test

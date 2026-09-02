@@ -27,11 +27,14 @@
 - A redstone pulse into an empty slot silently disarmed a running schedule's ∞ entry.
 - Removing the medium during ∞ playback left the sound running.
 - The range board tooltip and the upload failure messages were English-only.
+- A late arrival heard the sound about 7 seconds behind the players present from the start (live test, 2026-09-02).
+  The arrival time is now taken when the packet is received, not when the main thread -- stalled while a joining player's terrain loads -- gets to it,
+  and the time spent decoding the part being skipped is skipped as well.
 
 ### Internal
 
 - Network version 1.5 (`client_play_audio` carries a start offset and a synchronised flag; `client_set_loop` and `catchup_report` added). Older clients are refused at login.
-- The server log `SAS-CatchUp` records the start position each client actually applied.
+- The server log `SAS-CatchUp` records the start position each client actually applied (the final value, as the first audible byte is written, or once when the line closes if none was reached; the `SAS-Delivery` sweep line shows the tick-derived offset beside the wall-clock `wallMs`).
 
 ## [1.0.6] - 2026-08-29
 
