@@ -22,11 +22,29 @@ public final class SpatialGain {
 
     private SpatialGain() {}
 
-    /** Fade distance used when a device has no range board and attenuation is switched off. */
+    /**
+     * Fade distance used when a device has no range board and attenuation is switched off.
+     *
+     * <p>Independent of the device's range on purpose. A hard edge at the range was tried on
+     * 2026-09-02 and withdrawn the same day by review: it would have silenced existing worlds
+     * past their saved range (8 on most), and TSU's announcements reach this branch through
+     * SasApi with the board's default array, so they would have shrunk to eight blocks with
+     * nothing in the logs.
+     */
     public static final double AMBIENT_FALLOFF_BLOCKS = 160.0;
 
+    /** The smallest playback range a device can be set to, in blocks. */
+    public static final int MIN_RANGE_BLOCKS = 1;
+    /** The largest playback range a device can be set to, in blocks. */
+    public static final int MAX_RANGE_BLOCKS = 64;
+    /**
+     * The range a new device starts with: the distance a jukebox is heard from. Chosen on
+     * 2026-09-02 so that a device with no range board sounds like the block players already
+     * know; the earlier default of 8 stays on devices that were saved with it.
+     */
+    public static final int JUKEBOX_RANGE_BLOCKS = 64;
     /** Range assumed when the attenuation array cannot supply one. Mirrors the device default. */
-    public static final int DEFAULT_RANGE_BLOCKS = 8;
+    public static final int DEFAULT_RANGE_BLOCKS = JUKEBOX_RANGE_BLOCKS;
 
     /**
      * Linear volume in {@code [0, 1]} for a listener at {@code (px, py, pz)}.

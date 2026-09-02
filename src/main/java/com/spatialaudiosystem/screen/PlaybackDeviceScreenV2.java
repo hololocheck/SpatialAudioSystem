@@ -189,6 +189,16 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         return this.menu.getBlockEntity().getBlockPos();
     }
 
+    /** Palette: a wheel-editable value is #FFD54F; a value not in effect is the hint grey. */
+    private static final int COLOR_RANGE_VALUE = 0xFFFFD54F;
+    private static final int COLOR_RANGE_INACTIVE = 0xFF888888;
+
+    /** True while a range board with both corners set is in the slot: its box is then in effect. */
+    private boolean rangeBoardInserted() {
+        return com.spatialaudiosystem.item.RangeBoardItem.hasRange(
+                be().getInventory().getStackInSlot(PlaybackDeviceBlockEntity.RANGE_SLOT));
+    }
+
     private PlaybackDeviceBlockEntity be() {
         return this.menu.getBlockEntity();
     }
@@ -236,9 +246,23 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     return Component.translatable(
                             "gui.spatialaudiosystem.format_prefix", fmt.toUpperCase()).getString();
                 }
-                case "pb-atten-range":
-                    return Component.translatable("gui.spatialaudiosystem.attenuation_range",
-                            be.getAttenuationRange()).getString();
+                case "pb-atten-range": {
+                    if (rangeBoardInserted()) {
+                        return Component.translatable("gui.spatialaudiosystem.range_board_active").getString();
+                    }
+                    int range = be.getAttenuationRange();
+                    String text = Component.translatable(
+                            "gui.spatialaudiosystem.attenuation_range", range).getString();
+                    if (!be.isAttenuationMode()) {
+                        // Editable, kept, but not what the sound uses until attenuation is on. A
+                        // short suffix instead of the jukebox label: the row is 192 px wide and
+                        // nothing clips it, so the first version's long suffix ran past the dialog.
+                        text += Component.translatable("gui.spatialaudiosystem.range_unused").getString();
+                    } else if (range == com.spatialaudiosystem.audio.SpatialGain.JUKEBOX_RANGE_BLOCKS) {
+                        text += Component.translatable("gui.spatialaudiosystem.range_jukebox").getString();
+                    }
+                    return trimToFit(text, FILE_MAX_W);
+                }
                 case "pb-entry-index": {
                     int idx = JsonLayoutEngine.currentRepeatIndex();
                     return idx >= 0 ? String.valueOf(idx + 1) : "";
@@ -279,6 +303,10 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             case "pb-sched-btn-color":  return scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT;
             case "pb-sched-btn-border": return scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_BORDER;
             case "pb-sched-btn-bg":     return scheduleModeOn ? 0x1AFFC107 : 0x0DFFFFFF;
+            case "pb-atten-range-color":
+                // Amber only while the sound is shaped by this value (no box, attenuation on).
+                return PlaybackDeviceBlockEntity.presetInEffect(rangeBoardInserted(), be().isAttenuationMode())
+                        ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE;
             case "owner-border":
                 return com.manta.api.hud.OwnerAccess.ringColor(be().isPrivateMode());
             case "pb-entry-row-bg": {
@@ -325,6 +353,17 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     @Override
     public boolean onElementWheel(String[] classes, String key, int mouseX, int mouseY, double scrollY) {
+        if ("pb-range-wheel".equals(key)) {
+            // Consumed even when a board is inserted: the value is not in effect then, and
+            // letting the wheel fall through would change something else under the cursor.
+            if (rangeBoardInserted()) return true;
+            int delta = scrollY > 0 ? 1 : -1;   // R4.13.0.4
+            int next = PlaybackDeviceBlockEntity.clampRange(be().getAttenuationRange() + delta);
+            be().setAttenuationRange(next);     // optimistic; the server clamps and confirms
+            PacketDistributor.sendToServer(
+                    new com.spatialaudiosystem.network.SetAttenuationRangePayload(pos(), next));
+            return true;
+        }
         if ("pb-count-wheel".equals(key)) {
             int idx = JsonLayoutEngine.currentRepeatIndex();
             if (idx < 0) return false;

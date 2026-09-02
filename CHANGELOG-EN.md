@@ -20,6 +20,10 @@
   Toggling it while playing takes effect on the sound that is playing: OFF lets each listener finish the current pass, ON restarts it as endless.
 - The schedule ON/OFF toggle moved into the schedule screen's button row (the main-screen toggle is gone).
 - The range-board slot, attenuation, range display and schedule button now share one row.
+- **Playback range preset**: without a range board, hover the "Playback range" row on the device screen and scroll to set 1-64 blocks.
+  A newly placed device starts at 64 blocks (the jukebox's range); existing devices keep their saved value.
+  While a board is inserted its range applies and the row reads "set by the range board". A change takes effect from the next start.
+  A range board with corners set but per-face distances never edited used to borrow the device's range for all six faces; it now uses the board's default of 8 blocks.
 
 ### Fixed
 

@@ -3,6 +3,7 @@ package com.spatialaudiosystem.blockentity;
 import com.spatialaudiosystem.audio.AudioStorage;
 import com.spatialaudiosystem.audio.PlaybackDelivery;
 import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
+import com.spatialaudiosystem.audio.SpatialGain;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.item.RangeBoardItem;
@@ -157,7 +158,8 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private boolean isPlaying = false;
     private boolean showRange = false;
     private boolean attenuationMode = true;
-    private int attenuationRange = 8;
+    /** Playback range without a range board, in blocks. See SpatialGain.JUKEBOX_RANGE_BLOCKS. */
+    private int attenuationRange = SpatialGain.JUKEBOX_RANGE_BLOCKS;
     /** Server tick when playback started. Used for timeout safety net. */
     private long playbackStartTick = 0;
     /** Max playback duration in ticks before auto-stop (10 minutes). */
@@ -371,11 +373,27 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     }
 
     public void setAttenuationRange(int range) {
-        this.attenuationRange = Math.max(0, Math.min(15, range));
+        this.attenuationRange = clampRange(range);
         setChanged();
         if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
         }
+    }
+
+    /**
+     * Whether the device's own range is what the sound is shaped by: no range box, and
+     * attenuation on. With a box the board's faces apply; with attenuation off SpatialGain
+     * uses its fixed ambient fade and never reads the range. The screen colours the range
+     * row from this, so it cannot claim the value is in effect when it is not -- the second
+     * reading found it claiming exactly that for attenuation off (2026-09-02).
+     */
+    public static boolean presetInEffect(boolean boardInserted, boolean attenuationOn) {
+        return !boardInserted && attenuationOn;
+    }
+
+    /** The playback range's bounds, applied on every way in: the screen, the wire and disk. */
+    public static int clampRange(int range) {
+        return Math.max(SpatialGain.MIN_RANGE_BLOCKS, Math.min(SpatialGain.MAX_RANGE_BLOCKS, range));
     }
 
     public void startPlayback() {
@@ -477,7 +495,12 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
             rangePos2 = rangeStack.get(ModDataComponents.RANGE_POS2);
         }
         int[] attRanges = ModDataComponents.getAttenuationRangesArray(rangeStack);
-        if (!rangeStack.has(ModDataComponents.ATTENUATION_RANGES)) {
+        if (rangePos1 == null) {
+            // No box: the device's own range is the whole of the shape, whatever a boardless
+            // or cornerless stack in the slot may carry. Until 2026-09-02 the fill was keyed on
+            // the stack's per-face component instead, so a board with corners but no edited
+            // faces took the device's range as all six face distances, and a board with edited
+            // faces but no corners fed its east face in as the radius. Review found both.
             java.util.Arrays.fill(attRanges, attenuationRange);
         }
 
@@ -746,7 +769,9 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         isPlaying = tag.getBoolean("isPlaying");
         // Missing key (legacy data) means the default ON, not false — same rule as TSU's config.
         attenuationMode = !tag.contains("attenuationMode") || tag.getBoolean("attenuationMode");
-        attenuationRange = tag.contains("attenuationRange") ? tag.getInt("attenuationRange") : 8;
+        // A world saved before 2026-09-02 may hold 0 (the old floor); the clamp lifts it to 1.
+        attenuationRange = clampRange(tag.contains("attenuationRange")
+                ? tag.getInt("attenuationRange") : SpatialGain.JUKEBOX_RANGE_BLOCKS);
         // Eagerly migrate legacy AUDIO_DATA to file-based storage on load (Fix 4)
         if (level != null && !level.isClientSide() && level.getServer() != null) {
             migrateInventory();

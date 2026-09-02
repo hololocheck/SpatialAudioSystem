@@ -806,6 +806,77 @@ class PlaybackLoopTest {
         assertThat(d.getLoopingEntry()).as("the schedule's arm is dropped by the stop").isEqualTo(-1);
     }
 
+    /** A board as a stack carrying just the components that matter: corners and/or faces. */
+    private static ItemStack boardWith(boolean corners, int[] faces) {
+        ItemStack stack = new ItemStack(net.minecraft.world.item.Items.PAPER);
+        if (corners) {
+            stack.set(com.spatialaudiosystem.item.ModDataComponents.RANGE_POS1.get(), new BlockPos(-3, 60, -3));
+            stack.set(com.spatialaudiosystem.item.ModDataComponents.RANGE_POS2.get(), new BlockPos(3, 66, 3));
+        }
+        if (faces != null) {
+            stack.set(com.spatialaudiosystem.item.ModDataComponents.ATTENUATION_RANGES.get(),
+                    Arrays.stream(faces).boxed().toList());
+        }
+        return stack;
+    }
+
+    /** The face-range array the device hands to delivery for one start, with {@code boardSlot} in slot 1. */
+    private static int[] rangesSentFor(ItemStack boardSlot, int preset) {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, false);
+        set(d, "isPlaying", false);
+        set(d, "attenuationRange", preset);
+        net.neoforged.neoforge.items.ItemStackHandler slots = new net.neoforged.neoforge.items.ItemStackHandler(8);
+        slots.setStackInSlot(0, mediumWithAudio());
+        slots.setStackInSlot(1, boardSlot);
+        set(d, "inventory", slots);
+        try (org.mockito.MockedStatic<com.spatialaudiosystem.audio.PlaybackDelivery> delivery =
+                     org.mockito.Mockito.mockStatic(com.spatialaudiosystem.audio.PlaybackDelivery.class)) {
+            delivery.when(() -> com.spatialaudiosystem.audio.PlaybackDelivery.start(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean()))
+                    .thenReturn(PlaybackSessionRegistry.NO_PLAYBACK);
+            d.startPlayback();
+            org.mockito.ArgumentCaptor<int[]> ranges = org.mockito.ArgumentCaptor.forClass(int[].class);
+            delivery.verify(() -> com.spatialaudiosystem.audio.PlaybackDelivery.start(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean(), ranges.capture(),
+                    org.mockito.ArgumentMatchers.anyBoolean()));
+            return ranges.getValue();
+        }
+    }
+
+    @Test
+    @DisplayName("SAS-RANGE-001: without a board the device's own range is every face distance")
+    void withoutABoardTheFillIsThePreset() {
+        assertThat(rangesSentFor(ItemStack.EMPTY, 40)).containsExactly(40, 40, 40, 40, 40, 40);
+    }
+
+    @Test
+    @DisplayName("SAS-RANGE-001: a board with corners but no edited faces keeps the board's default, not the preset")
+    void aBoardWithCornersButNoFacesKeepsTheBoardDefault() {
+        // Until 2026-09-02 the fill was keyed on the per-face component, so this board -- the
+        // ordinary one, corners set and faces never touched -- took the device's range as all six
+        // face distances. With the default moved to 64 that would have widened every such fade
+        // from 8 to 64 while the screen said the preset was not in effect. Review found it.
+        assertThat(rangesSentFor(boardWith(true, null), 64)).containsExactly(8, 8, 8, 8, 8, 8);
+    }
+
+    @Test
+    @DisplayName("SAS-RANGE-001: a board with edited faces but no corners does not replace the preset")
+    void aCornerlessBoardDoesNotOverrideThePreset() {
+        // No corners means no box, so the radius branch runs on ranges[0]; the board's east face
+        // must not become that radius while the screen shows and edits the preset.
+        assertThat(rangesSentFor(boardWith(false, new int[]{3, 3, 3, 3, 3, 3}), 24))
+                .containsExactly(24, 24, 24, 24, 24, 24);
+    }
+
     @Test
     @DisplayName("SAS-AUDIO-008: starting the single medium passes the endless button's state")
     void startingTheSingleMediumPassesTheEndlessFlag() {

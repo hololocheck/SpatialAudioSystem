@@ -24,7 +24,15 @@ public record SetAttenuationRangePayload(BlockPos pos, int range) implements Cus
     }
 
     private static SetAttenuationRangePayload read(FriendlyByteBuf buf) {
-        return new SetAttenuationRangePayload(buf.readBlockPos(), buf.readInt());
+        net.minecraft.core.BlockPos pos = buf.readBlockPos();
+        int range = buf.readInt();
+        // Bounded at decode, like every value a peer can name: the server clamps too, but a
+        // refused packet is a refused packet and a clamped one is a silent correction.
+        if (range < com.spatialaudiosystem.audio.SpatialGain.MIN_RANGE_BLOCKS
+                || range > com.spatialaudiosystem.audio.SpatialGain.MAX_RANGE_BLOCKS) {
+            throw new io.netty.handler.codec.DecoderException("Invalid playback range: " + range);
+        }
+        return new SetAttenuationRangePayload(pos, range);
     }
 
     public static void handle(SetAttenuationRangePayload payload, IPayloadContext context) {

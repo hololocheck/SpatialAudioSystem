@@ -132,6 +132,9 @@ class SpatialGainTest {
     @Test
     @DisplayName("SAS-AUDIO-007: without a board and with attenuation off, the gentle 160-block falloff applies")
     void withoutABoardAttenuationOffUsesTheAmbientFalloff() {
+        // Deliberately not the device's range: a hard edge at it was tried on 2026-09-02 and
+        // withdrawn by review the same day -- existing worlds and TSU's announcements (through
+        // SasApi, with the board's default array) would have gone silent past eight blocks.
         assertThat(SpatialGain.linearGain(20.5, 64.5, 0.5, DEVICE, null, null, false, ranges(8)))
                 .as("audible far past the 8-block device range, which this mode ignores")
                 .isGreaterThan(0.0f);

@@ -160,7 +160,11 @@ public final class SasApi {
      * @param pos               source position used as playback handle
      * @param recordingMedium   item stack with audio data (must satisfy {@link #hasAudio})
      * @param rangeBoard        optional range board for spatial attenuation (may be {@link ItemStack#EMPTY})
-     * @param attenuationMode   true: directional attenuation, false: spherical 16-block fade
+     * @param attenuationMode   true: fade over the board's face ranges -- 8 blocks per face when
+     *                          the board is empty or its faces were never edited (this method
+     *                          has no device, so no device range is involved); false: with a
+     *                          range box, full volume inside it and silence outside; with no
+     *                          box, a fixed gentle fade over 160 blocks, independent of any range
      * @return true if playback was started; false if data could not be loaded
      */
     public static boolean playAudio(ServerLevel level, BlockPos pos,
