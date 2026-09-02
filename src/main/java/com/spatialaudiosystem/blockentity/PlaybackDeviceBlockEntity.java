@@ -58,6 +58,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private final ItemStackHandler inventory = new ItemStackHandler(SLOT_COUNT) {
         @Override
         protected void onContentsChanged(int slot) {
+            if (slot == MEDIA_SLOT) onMediaSlotChanged();
             setChanged();
             if (level != null && !level.isClientSide()) {
                 level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
@@ -123,6 +124,32 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private static final long LOOP_ARM_RETRY_TICKS = 20;
     /** Schedule mode: the playlist editor is armed and the single-play media slot is barred. */
     private boolean scheduleMode = false;
+    /**
+     * Play the single medium endlessly.
+     *
+     * <p>Separate from the schedule's own endless entry: until 2026-08-30 the only way to reach
+     * an endless sound was to build a one-entry schedule, which is a lot of screen for "this
+     * device hums until I stop it".
+     *
+     * <p>Not final and not initialised inline on purpose -- this class is also constructed by
+     * Objenesis in tests, which skips field initialisers, so a non-false default here would be
+     * a value that exists in production and not under test.
+     */
+    private boolean normalLoop = false;
+
+    /**
+     * The sound currently playing here was started from {@link #MEDIA_SLOT}.
+     *
+     * <p>{@code isPlaying} alone cannot say that: the scheduler's own tracks and the per-entry
+     * preview set it too. Without this, a device with the endless button left on and a medium
+     * still sitting in its slot -- which schedule mode bars but never empties -- would count a
+     * playlist track as its endless sound, suppress the runaway timeout for it, and on the next
+     * restart start the single medium on its own. Found by review on 2026-08-30.
+     *
+     * <p>Persisted, because after a restart there is nothing left to re-derive it from: the
+     * session registry is process-local. Same reason {@code loopingEntry} is persisted.
+     */
+    private boolean playingSingle = false;
     private java.util.UUID ownerUUID = null;   // first player to open this device
     private String ownerName = null;
     private boolean privateMode = false;       // private = owner only (OwnerAccess ring red)
@@ -352,7 +379,76 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     }
 
     public void startPlayback() {
-        playMedia(inventory.getStackInSlot(MEDIA_SLOT));
+        ItemStack single = inventory.getStackInSlot(MEDIA_SLOT);
+        // Nothing to start: leave whatever is playing exactly as it is. A redstone pulse into
+        // an empty slot used to disarm a running playlist loop without stopping it, and the
+        // safety-net timeout then ended that loop ten minutes later (review, 2026-09-02).
+        if (!RecordingMediumItem.hasAudioData(single)) return;
+        // Whatever the schedule had armed is no longer what this device is playing. Superseded
+        // by stopping it, the way playAll does, rather than by dropping its arm: both arms set
+        // at once made restoreLoop bring back a playlist entry instead of the medium in the
+        // slot after a chunk reload, and both are persisted, so it survived a restart too.
+        if (isPlaying || loopingEntry >= 0) stopPlayback();
+        playingSingle = playMedia(single, normalLoop);
+    }
+
+    /** Whether the single medium plays endlessly. */
+    public boolean isNormalLoop() {
+        return normalLoop;
+    }
+
+    /**
+     * Flips the endless flag for the single medium.
+     *
+     * <p>Reaches the sound that is playing, not only the next start. Turning the button off
+     * used to leave an endless sound repeating until something else stopped it, which a live
+     * test found on 2026-08-30: the button sits beside a stop and reads as a state of the
+     * device, so it has to describe what the device is doing now.
+     *
+     * <p>Turning it off while the single medium plays <em>retires the sound on the server</em>
+     * and lets each client finish its current pass on its own. Retiring it here, rather than
+     * on the first client's finish report, is what makes the end per-client: the record a late
+     * arrival would be delivered from is gone, so nobody is handed a pass that ends at decode
+     * speed and reports the sound finished for everyone who is still hearing it -- the defect
+     * a review found on 2026-09-02 in the version that let the clients decide.
+     */
+    public void toggleNormalLoop() {
+        normalLoop = !normalLoop;
+        setChanged();
+        if (level instanceof ServerLevel sl) {
+            if (playingSingle && isPlaying) {
+                long id = PlaybackSessionRegistry.currentId(sl, getBlockPos());
+                if (id != PlaybackSessionRegistry.NO_PLAYBACK) {
+                    if (normalLoop) {
+                        // A playing one-shot becomes endless by being started again as one.
+                        // The one-shot went to every player in the dimension, because its
+                        // end is reported by a client; flipping all of those to endless would
+                        // pin a decode thread and an open line on players who cannot hear it,
+                        // and the far ones would still report the old id finished and retire
+                        // the sound under the near ones. Restarting goes through the filtered
+                        // start instead. The cost is that listeners hear it from the top.
+                        stopPlayback();
+                        playingSingle = playMedia(inventory.getStackInSlot(MEDIA_SLOT), true);
+                        return;
+                    } else {
+                        // Withdrawn. Every client that has the sound is told to stop looping
+                        // and ends at its own pass boundary; the server has nothing left to
+                        // deliver or to accept a report for, and the device is stopped now.
+                        var msg = new com.spatialaudiosystem.network.ClientSetLoopPayload(
+                                getBlockPos(), id, false);
+                        for (ServerPlayer listener : sl.players()) {
+                            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(listener, msg);
+                        }
+                        PlaybackSessionRegistry.end(sl, getBlockPos());
+                        isPlaying = false;
+                        playingSingle = false;
+                        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(
+                                new belugalab.sas.api.PlaybackEndedEvent(sl, getBlockPos()));
+                    }
+                }
+            }
+            level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
+        }
     }
 
     /**
@@ -392,6 +488,9 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         if (playbackId == PlaybackSessionRegistry.NO_PLAYBACK) return false;
 
         isPlaying = true;
+        // Cleared here rather than at each other call site: this is the one path every start
+        // runs through, so a new caller cannot forget to say it is not the single medium.
+        playingSingle = false;
         playbackStartTick = level.getGameTime();
         setChanged();
         level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
@@ -426,8 +525,57 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         return loopingEntry >= 0 && loopingEntry < entryCount && isLoopEntry(loopingEntry);
     }
 
+    /**
+     * Stops the single medium's sound when its medium is taken out while it plays.
+     *
+     * <p>The playlist already does this for its rows. The single slot did not, so an endless
+     * single kept looping on every client after its medium was gone, while the server -- whose
+     * "sounding endlessly" test reads the slot -- believed nothing endless was playing and let
+     * a Play All start over it without a stop (review, 2026-09-02). Package-private so the rule
+     * can be exercised without the handler, which cannot be constructed under Objenesis.
+     */
+    void onMediaSlotChanged() {
+        // Server only, like the playlist hook: the client copy of this block entity sees the
+        // same slot changes through container sync, and a stop from there would be a stop
+        // nobody asked the server for.
+        if (level != null && level.isClientSide()) return;
+        if (playingSingle && isPlaying && inventory.getStackInSlot(MEDIA_SLOT).isEmpty()) {
+            stopPlayback();
+        }
+    }
+
+    /**
+     * Whether what is sounding here will never end on its own.
+     *
+     * <p>Either endless source counts: a playlist entry set to endless, or the single medium
+     * with the endless button on. A caller about to start something else has to stop an
+     * endless sound explicitly -- a one-shot ends by itself and is left alone -- and a check
+     * keyed on the playlist arm alone missed the second source (review, 2026-09-02).
+     */
+    public boolean isSoundingEndlessly() {
+        return isLoopArmed() || isNormalLoopArmed();
+    }
+
+    /**
+     * The single medium is set to play endlessly and has been started.
+     *
+     * <p>{@code isPlaying} is part of the test, and it is the part that matters: without it a
+     * device holding a medium with the endless button left on would start sounding on its own
+     * at the next tick, which nobody asked for. It is also what a stop clears, so stopping
+     * disarms this without touching the button.
+     *
+     * <p>Found by review on 2026-08-30, before which the endless single medium was not armed at
+     * all: the safety-net timeout below reached it at ten minutes and stopped it, so "endless"
+     * lasted exactly as long as a runaway sound was allowed to.
+     */
+    private boolean isNormalLoopArmed() {
+        return normalLoop && isPlaying && playingSingle
+                && !inventory.getStackInSlot(MEDIA_SLOT).isEmpty();
+    }
+
     public void stopPlayback() {
         isPlaying = false;
+        playingSingle = false;
         // Every stop path runs through here, so this is the one place that has to disarm the
         // loop. Leaving it armed would have tick() start the sound again a second later.
         loopingEntry = -1;
@@ -461,7 +609,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     public static void tick(Level level, BlockPos pos, BlockState state, PlaybackDeviceBlockEntity entity) {
         if (level.isClientSide()) return;
 
-        if (entity.isLoopArmed()) {
+        if (entity.isLoopArmed() || entity.isNormalLoopArmed()) {
             // Only the loop branch needs the server level; the timeout below does not, and
             // narrowing the whole method to it would change a path this is not about.
             if (!(level instanceof ServerLevel serverLevel)) return;
@@ -485,8 +633,21 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         }
     }
 
-    /** Starts the armed loop again, or disarms when its entry can no longer produce a sound. */
+    /** Starts the armed loop again, or disarms when its source can no longer produce a sound. */
     private void restoreLoop() {
+        if (loopingEntry < 0) {
+            // The single medium's endless play. Nothing to disarm if the slot has been emptied:
+            // isNormalLoopArmed() already reads the slot, so it stops being armed by itself.
+            ItemStack single = inventory.getStackInSlot(MEDIA_SLOT);
+            // playMedia clears playingSingle for every caller, so this has to set it back --
+            // exactly as startPlayback does. Without it the restore disarms what it restored
+            // and the safety-net timeout ends the loop ten minutes later.
+            if (!single.isEmpty() && (playingSingle = playMedia(single, true))) {
+                LOOP_SIGNAL.info("restored pos={},{},{} entry=single",
+                        getBlockPos().getX(), getBlockPos().getY(), getBlockPos().getZ());
+            }
+            return;
+        }
         // isLoopArmed() has already established the index and the endless setting; what is left
         // is whether the entry still holds media.
         ItemStack media = playlist.getStackInSlot(loopingEntry);
@@ -514,6 +675,8 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         tag.putInt("entryCount", entryCount);
         tag.putInt("loopingEntry", loopingEntry);   // survives restart: tick() restores the sound
         tag.putBoolean("scheduleMode", scheduleMode);
+        tag.putBoolean("normalLoop", normalLoop);
+        tag.putBoolean("playingSingle", playingSingle);
         tag.putBoolean("showRange", showRange);
         tag.putBoolean("isPlaying", isPlaying);
         tag.putBoolean("attenuationMode", attenuationMode);
@@ -565,6 +728,8 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         loadPlayCounts(tag);
         loadEntryCount(tag);
         scheduleMode = tag.getBoolean("scheduleMode");
+        normalLoop = tag.getBoolean("normalLoop");
+        playingSingle = tag.getBoolean("playingSingle");
         loopingEntry = tag.contains("loopingEntry")
                 ? Math.max(-1, Math.min(MAX_ENTRIES - 1, tag.getInt("loopingEntry")))
                 : -1;
@@ -627,6 +792,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         tag.putInt("attenuationRange", attenuationRange);
         tag.putInt("entryCount", entryCount);
         tag.putBoolean("scheduleMode", scheduleMode);     // client: ✕ lock + button arming
+        tag.putBoolean("normalLoop", normalLoop);        // client: the endless button
         tag.putInt("playingEntry", playingEntry);         // client: playing-frame highlight
         if (ownerUUID != null) tag.putUUID("OwnerUUID", ownerUUID);   // client: owner face
         tag.putBoolean("PrivateMode", privateMode);                   // client: ring colour

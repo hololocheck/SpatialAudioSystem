@@ -131,9 +131,11 @@ class PlaybackDeliverySweepTest {
 
     // ===== starting a sound (SAS-AUDIO-010) =====
     //
-    // start() and sweep() treat an endless sound and a one-shot differently on purpose, and the
-    // asymmetry is the point: an endless sound is filtered by audibility and stays offerable,
-    // a one-shot is sent to everyone once and never again. Each half is pinned separately.
+    // Both stay offerable, so a listener who arrives later is started at the point the sound has
+    // reached rather than left in silence -- that half used to be endless-only and is what left
+    // a joining player hearing nothing. The initial send is still asymmetric and deliberately
+    // so: an endless sound is filtered by audibility, a one-shot is not, because a one-shot's
+    // completion is client-reported and one that reached nobody would never end.
 
     private static int[] range8() {
         int[] r = new int[6];
@@ -183,8 +185,93 @@ class PlaybackDeliverySweepTest {
 
         startAt(false, near, far);
 
-        // A one-shot has only this chance to reach a listener; there is no later sweep for it.
+        // Not an oversight, and it was briefly changed to a filter on 2026-08-30 before review
+        // caught what that costs: a one-shot's completion is reported by a client, and the
+        // schedule advances on that report. Filtered, a one-shot with nobody inside the device's
+        // range reaches no client, no report is ever sent, and the sequence parks on that entry
+        // for good. An endless sound is filtered precisely because it needs no such report.
         assertThat(sentTo).contains(near, far);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-010: a late listener is never handed an offset the client refuses")
+    void theOffsetNeverExceedsWhatTheDecoderAccepts() {
+        when(level.getGameTime()).thenReturn(0L);
+        startAt(true, playerAt("near", 2.5));
+
+        // A fortnight of ticks: past the decoder's bound, which refuses by throwing inside a
+        // clientbound payload -- that drops the player rather than denying the sound.
+        when(level.getGameTime()).thenReturn(20L * 24 * 60 * 60 * 20);
+        ServerPlayer later = playerAt("later", 3.5);
+        when(level.players()).thenReturn(List.of(later));
+        sent.clear();
+
+        PlaybackDelivery.sweep(server);
+
+        assertThat(playPayloads()).singleElement().satisfies(p -> {
+            assertThat(p.startOffsetMillis())
+                    .isLessThanOrEqualTo(ClientPlayAudioPayload.MAX_START_OFFSET_MILLIS);
+            // And the payload must survive its own decoder, which is where the refusal lives.
+            io.netty.buffer.ByteBuf buf = io.netty.buffer.Unpooled.buffer();
+            net.minecraft.network.FriendlyByteBuf wire = new net.minecraft.network.FriendlyByteBuf(buf);
+            ClientPlayAudioPayload.STREAM_CODEC.encode(wire, p);
+            assertThat(ClientPlayAudioPayload.STREAM_CODEC.decode(wire).startOffsetMillis())
+                    .isEqualTo(p.startOffsetMillis());
+        });
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-010: a one-shot stays offerable to players who arrive later")
+    void aOneShotIsRegisteredForLaterDelivery() {
+        long id = startAt(false, playerAt("near", 2.5));
+        assertThat(id).isNotEqualTo(PlaybackSessionRegistry.NO_PLAYBACK);
+
+        // Reported from a live server on 2026-08-30: a player who joined while a sound was
+        // playing heard nothing until it was stopped and started again. The previous rule --
+        // one-shots are never offered again -- is what produced that silence.
+        assertThat(PlaybackSessionRegistry.pendingFor(OVERWORLD, playerAt("later", 3.5).getUUID()))
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-010: a listener who arrives late starts where the sound has got to")
+    void aLateListenerStartsWhereTheSoundHasGotTo() {
+        when(level.getGameTime()).thenReturn(1_000L);
+        startAt(false, playerAt("near", 2.5));
+
+        // Six seconds of ticks later, someone walks in.
+        when(level.getGameTime()).thenReturn(1_120L);
+        ServerPlayer later = playerAt("later", 3.5);
+        when(level.players()).thenReturn(List.of(later));
+        sentTo.clear();
+        sent.clear();
+
+        PlaybackDelivery.sweep(server);
+
+        // The number, not merely that something was sent: starting them at the top is what puts
+        // a late arrival out of step with everyone still hearing the original, and an offset of
+        // zero is exactly that mistake wearing a delivery's clothes.
+        assertThat(playPayloads()).singleElement().satisfies(p -> {
+            assertThat(p.startOffsetMillis()).isEqualTo(6_000);
+            // The flag is what makes the client add its own transfer time. Nothing else pinned
+            // it, so flipping the literal at the sweep site to false left every test green while
+            // every late joiner fell a whole download behind -- the very gap the flag closes.
+            assertThat(p.synchronised()).as("a late delivery must be synchronised").isTrue();
+        });
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-010: the players present at the start are not asked to catch up")
+    void thePlayersPresentAtTheStartGetNoOffset() {
+        when(level.getGameTime()).thenReturn(7_777L);
+        startAt(true, playerAt("near", 2.5));
+
+        // A non-zero offset here would silently skip the opening of every sound for the people
+        // who were standing there when it began.
+        assertThat(playPayloads()).singleElement().satisfies(p -> {
+            assertThat(p.startOffsetMillis()).isZero();
+            assertThat(p.synchronised()).as("a world sound is synchronised from the start").isTrue();
+        });
     }
 
     @Test
@@ -196,22 +283,6 @@ class PlaybackDeliverySweepTest {
 
         assertThat(PlaybackSessionRegistry.pendingFor(OVERWORLD, playerAt("later", 3.5).getUUID()))
                 .hasSize(1);
-    }
-
-    @Test
-    @DisplayName("SAS-AUDIO-010: a one-shot is never offered to anyone afterwards")
-    void aOneShotIsNotRegisteredForLaterDelivery() {
-        long id = startAt(false, playerAt("near", 2.5));
-        assertThat(id).isNotEqualTo(PlaybackSessionRegistry.NO_PLAYBACK);
-
-        // Restarting a short sound from the top for a late arrival puts them out of sync with
-        // everyone still hearing the original, and a one-shot at a position with no block entity
-        // has nothing that ever ends its session -- it would be pushed, long stale, forever.
-        assertThat(PlaybackSessionRegistry.pendingFor(OVERWORLD, playerAt("later", 3.5).getUUID()))
-                .isEmpty();
-        assertThat(PlaybackSessionRegistry.currentId(level, DEVICE))
-                .as("it is still an active sound, just not a replayable one")
-                .isEqualTo(id);
     }
 
     @Test

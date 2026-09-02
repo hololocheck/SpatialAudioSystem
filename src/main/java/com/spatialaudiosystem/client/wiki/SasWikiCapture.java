@@ -1,6 +1,6 @@
 package com.spatialaudiosystem.client.wiki;
 
-import belugalab.mcss3.debug.GuiScreenCapture;
+import com.manta.api.debug.GuiScreenCapture;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.spatialaudiosystem.SpatialAudioSystem;

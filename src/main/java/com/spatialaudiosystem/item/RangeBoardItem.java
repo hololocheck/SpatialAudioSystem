@@ -116,14 +116,14 @@ public class RangeBoardItem extends Item {
         if (stack.has(ModDataComponents.RANGE_POS1) && stack.has(ModDataComponents.RANGE_POS2)) {
             BlockPos pos1 = stack.get(ModDataComponents.RANGE_POS1);
             BlockPos pos2 = stack.get(ModDataComponents.RANGE_POS2);
-            tooltipComponents.add(Component.literal("Pos1: " + pos1.getX() + ", " + pos1.getY() + ", " + pos1.getZ())
-                    .withStyle(ChatFormatting.AQUA));
-            tooltipComponents.add(Component.literal("Pos2: " + pos2.getX() + ", " + pos2.getY() + ", " + pos2.getZ())
-                    .withStyle(ChatFormatting.AQUA));
+            tooltipComponents.add(Component.translatable("tooltip.spatialaudiosystem.range_board.pos1",
+                    pos1.getX(), pos1.getY(), pos1.getZ()).withStyle(ChatFormatting.AQUA));
+            tooltipComponents.add(Component.translatable("tooltip.spatialaudiosystem.range_board.pos2",
+                    pos2.getX(), pos2.getY(), pos2.getZ()).withStyle(ChatFormatting.AQUA));
         } else if (stack.has(ModDataComponents.RANGE_POS1)) {
             BlockPos pos1 = stack.get(ModDataComponents.RANGE_POS1);
-            tooltipComponents.add(Component.literal("Pos1: " + pos1.getX() + ", " + pos1.getY() + ", " + pos1.getZ())
-                    .withStyle(ChatFormatting.AQUA));
+            tooltipComponents.add(Component.translatable("tooltip.spatialaudiosystem.range_board.pos1",
+                    pos1.getX(), pos1.getY(), pos1.getZ()).withStyle(ChatFormatting.AQUA));
             tooltipComponents.add(Component.translatable("tooltip.spatialaudiosystem.range_board.set_pos2")
                     .withStyle(ChatFormatting.GRAY));
         } else {
@@ -132,12 +132,12 @@ public class RangeBoardItem extends Item {
         }
         // Attenuation ranges: [East=0, West=1, Up=2, Down=3, South=4, North=5]
         int[] ranges = ModDataComponents.getAttenuationRangesArray(stack);
-        tooltipComponents.add(Component.literal("Attenuation:").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.literal(
-                "E:" + ranges[0] + "  W:" + ranges[1] + "  U:" + ranges[2] + " blocks")
-                .withStyle(ChatFormatting.WHITE));
-        tooltipComponents.add(Component.literal(
-                "D:" + ranges[3] + "  S:" + ranges[4] + "  N:" + ranges[5] + " blocks")
+        tooltipComponents.add(Component.translatable("tooltip.spatialaudiosystem.range_board.attenuation")
+                .withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable("tooltip.spatialaudiosystem.range_board.ranges_ewu",
+                ranges[0], ranges[1], ranges[2]).withStyle(ChatFormatting.WHITE));
+        tooltipComponents.add(Component.translatable("tooltip.spatialaudiosystem.range_board.ranges_dsn",
+                ranges[3], ranges[4], ranges[5])
                 .withStyle(ChatFormatting.WHITE));
 
         super.appendHoverText(stack, context, tooltipComponents, tooltipFlag);

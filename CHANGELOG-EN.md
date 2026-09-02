@@ -2,6 +2,37 @@
 
 > Japanese version: [CHANGELOG.md](CHANGELOG.md)
 
+## [1.1.0] - 2026-09-02
+
+### Changed
+
+- **Manta 2.0.0** (embedded Manta updated to 2.0.0, required range `[2.0.0,3)`).
+  Update the other BelugaLab mods (TSU 1.1.0 / ASC 1.2.0) at the same time: a build that embeds Manta 1.x requires `[1.1.74,2)`, and the two required ranges cannot both be satisfied by one Manta.
+
+### Added
+
+- **Every sound reaches a player who arrives late, from the sound's current position.**
+  One-shots are now delivered on joining, on arriving from another dimension, and on walking into range, just like ∞ sounds.
+  The listener starts at the position the sound has reached (their own download time is accounted for).
+  Listeners who were present from the start are behind that position by their own initial download, so a late arrival can be ahead of them by that much.
+  A player who arrives within range after the sound has ended hears nothing, and the sound is retired.
+- **∞ button for normal playback** (right of play/stop): the medium in the single slot repeats until stopped.
+  Toggling it while playing takes effect on the sound that is playing: OFF lets each listener finish the current pass, ON restarts it as endless.
+- The schedule ON/OFF toggle moved into the schedule screen's button row (the main-screen toggle is gone).
+- The range-board slot, attenuation, range display and schedule button now share one row.
+
+### Fixed
+
+- The single slot's ∞ playback stopped after 10 minutes (it reached the runaway safety timeout).
+- A redstone pulse into an empty slot silently disarmed a running schedule's ∞ entry.
+- Removing the medium during ∞ playback left the sound running.
+- The range board tooltip and the upload failure messages were English-only.
+
+### Internal
+
+- Network version 1.5 (`client_play_audio` carries a start offset and a synchronised flag; `client_set_loop` and `catchup_report` added). Older clients are refused at login.
+- The server log `SAS-CatchUp` records the start position each client actually applied.
+
 ## [1.0.6] - 2026-08-29
 
 ### Added
@@ -18,10 +49,7 @@
   ∞ sound for you, **provided you are somewhere it can be heard**. Players outside the audible
   region are not sent it, so nothing is transferred for a sound nobody could hear.
 
-  This applies to ∞ sounds only. A one-shot still behaves exactly as before — sent once, to the
-  players present when it starts. Restarting a short sound from the top for someone who arrived
-  halfway through would put them out of sync with everyone still hearing the original, which is
-  worse than not hearing it.
+  (In 1.0.6 this applied to ∞ sounds only. 1.1.0 extends it to one-shots, started from the sound's current position — see below.)
 - **`SasApi.playAudio(..., boolean loop)`** added to the public API. The existing five-argument
   form is unchanged and behaves as `loop = false`.
 

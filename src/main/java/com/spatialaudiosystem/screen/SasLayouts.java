@@ -1,6 +1,6 @@
 package com.spatialaudiosystem.screen;
 
-import belugalab.mcss3.screen.JsonLayoutScreen;
+import com.manta.api.screen.JsonLayoutScreen;
 
 /**
  * Loads this mod's layout JSON through Manta's resource loader. Mirrors TSU's

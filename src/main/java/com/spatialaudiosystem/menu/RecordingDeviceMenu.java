@@ -141,7 +141,7 @@ public class RecordingDeviceMenu extends AbstractContainerMenu {
 
     @Override
     public boolean clickMenuButton(Player player, int id) {
-        if (id == belugalab.tsu.api.OwnerAccess.TOGGLE_BUTTON) {
+        if (id == com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON) {
             blockEntity.toggleOwnerAccess(player);   // owner-only; a no-op for anyone else
             return true;
         }

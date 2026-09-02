@@ -57,20 +57,33 @@ public final class PlaybackSessionRegistry {
         }
     }
 
-    /** One active sound: its identity, how to replay it, and who already has it. */
+    /** One active sound: its identity, how to replay it, when it started, and who has it. */
     private static final class Session {
         final long id;
         final Replay replay;                        // null: started by a path that cannot replay
+        /**
+         * Server game time at which the sound began.
+         *
+         * <p>Held so a listener who arrives later can be started at the point the sound has
+         * already reached, rather than at the top. Starting a late arrival from the top is what
+         * the delivery sweep did for its first version, and it is wrong twice over: a one-shot
+         * puts them out of step with everyone still hearing the original, and a sound that
+         * finished before they arrived begins again for them alone.
+         */
+        final long startedAtGameTime;
         final Set<UUID> delivered = ConcurrentHashMap.newKeySet();
+        /** Players whose client has reported what it did with the offset. One report each. */
+        final Set<UUID> reported = ConcurrentHashMap.newKeySet();
 
-        Session(long id, Replay replay) {
+        Session(long id, Replay replay, long startedAtGameTime) {
             this.id = id;
             this.replay = replay;
+            this.startedAtGameTime = startedAtGameTime;
         }
     }
 
     /** An active sound a particular player has not been sent yet. */
-    public record Pending(BlockPos pos, long playbackId, Replay replay) {}
+    public record Pending(BlockPos pos, long playbackId, Replay replay, long startedAtGameTime) {}
 
     private static final Map<GlobalPos, Session> current = new ConcurrentHashMap<>();
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -88,8 +101,25 @@ public final class PlaybackSessionRegistry {
      */
     public static long begin(ServerLevel level, BlockPos pos, Replay replay) {
         long id = newId();
-        current.put(GlobalPos.of(level.dimension(), pos), new Session(id, replay));
+        current.put(GlobalPos.of(level.dimension(), pos),
+                new Session(id, replay, level.getGameTime()));
         return id;
+    }
+
+    /**
+     * Accepts a client's catch-up report, once per player per sound.
+     *
+     * <p>The report reaches only a log line, but that line exists so the server's log can be
+     * trusted about what a client did -- so it must not be writable by a client that was never
+     * sent the sound, or writable a thousand times by one that was. The id is server-issued
+     * and random, so naming a current one is proof of having been sent it; the delivered set
+     * is the second check for a player who learned the id some other way.
+     */
+    public static boolean acceptCatchUpReport(ServerLevel level, BlockPos pos, long playbackId,
+                                              UUID playerId) {
+        Session s = current.get(GlobalPos.of(level.dimension(), pos));
+        if (s == null || s.id != playbackId || !s.delivered.contains(playerId)) return false;
+        return s.reported.add(playerId);
     }
 
     /** The id playing here, or {@link #NO_PLAYBACK}. */
@@ -133,7 +163,7 @@ public final class PlaybackSessionRegistry {
             if (!e.getKey().dimension().equals(dim)) continue;
             Session s = e.getValue();
             if (s.replay == null || s.delivered.contains(playerId)) continue;
-            pending.add(new Pending(e.getKey().pos(), s.id, s.replay));
+            pending.add(new Pending(e.getKey().pos(), s.id, s.replay, s.startedAtGameTime));
         }
         return pending;
     }
@@ -157,7 +187,13 @@ public final class PlaybackSessionRegistry {
      * holds the audio but who is still recorded as having been sent it would never hear it again.
      */
     public static void forgetPlayer(UUID playerId) {
-        for (Session s : current.values()) s.delivered.remove(playerId);
+        for (Session s : current.values()) {
+            s.delivered.remove(playerId);
+            // The next delivery is a new one to this client, and its report is the one that
+            // matters -- it carries the non-zero offset. Keeping the old mark refused exactly
+            // that report (review, 2026-09-02).
+            s.reported.remove(playerId);
+        }
     }
 
     /** True when nothing is playing anywhere, so a sweep can return without allocating. */

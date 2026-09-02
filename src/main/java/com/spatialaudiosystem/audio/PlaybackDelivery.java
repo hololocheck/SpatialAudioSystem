@@ -40,29 +40,38 @@ public final class PlaybackDelivery {
     private static final org.slf4j.Logger SIGNAL =
             org.slf4j.LoggerFactory.getLogger("SAS-Delivery");
 
+    /** Server ticks are 20 per second by contract, so elapsed ticks convert exactly. */
+    private static final int MILLIS_PER_TICK = 50;
+
     private PlaybackDelivery() {}
 
     /**
      * Starts a sound at {@code pos} and sends it to the players who should have it.
      *
-     * <p><b>Only an endless sound is registered for later delivery.</b> A one-shot behaves as it
-     * always has: sent once, to everyone in the level, and never offered again. Two reasons, and
-     * both are about one-shots specifically:
-     * <ul>
-     *   <li>Restarting a short sound from the top for a late arrival puts them out of sync with
-     *       everyone still hearing the original. For an endless ambience the phase is not
-     *       observable — each listener hears their own client — so the same restart is correct.
-     *   <li>A one-shot at a position with no block entity (the public API's case) has nothing
-     *       that ever ends its session, so it would stay offerable for the life of the server and
-     *       be pushed, long stale, at the first player to walk past.
-     * </ul>
+     * <p><b>Every sound is registered for later delivery, one-shots included.</b> A listener who
+     * arrives after it began -- by joining, by returning from another dimension, or by walking
+     * into range -- is started at the point the sound has already reached, not at the top.
+     *
+     * <p>An earlier version registered only endless sounds, on the reasoning that restarting a
+     * short one for a late arrival would put them out of step with everyone still hearing the
+     * original. That reasoning was right about restarting and wrong about the remedy: the answer
+     * is to start them where the sound is, which the offset does, rather than to leave them in
+     * silence. Reported from a live server on 2026-08-30 -- a player who joined while a sound was
+     * playing heard nothing until it was stopped and started again.
+     *
+     * <p>A one-shot does not normally stay offerable: the first client to reach its end reports
+     * it finished, and that report retires the session for everyone. One case does linger --
+     * a sound started with nobody in the level, whose only listener never comes into range.
+     * {@link #sweep} returns before sending when nobody is audible, so no client is ever in a
+     * position to report it, and for a position with no block entity nothing else ends it. It
+     * is one entry per position rather than a leak that grows, but it does read as sounding to
+     * anything asking {@code currentId}.
      *
      * <p>The initial send is filtered by audibility for an endless sound and not for a one-shot.
-     * Again the asymmetry is deliberate: a one-shot has only this one chance to reach a listener,
-     * while an endless sound reaches anyone who becomes audible on the next {@link #sweep}. Sending
-     * an endless sound to the whole dimension would pin a decode thread, an open audio line and up
-     * to ten megabytes on every player, at any distance, for as long as the server runs — there is
-     * no distance-based stop on the client, only an explicit one.
+     * For an endless sound the filter is what stops a decode thread, an open audio line and up
+     * to ten megabytes being pinned on every player in the dimension for as long as the server
+     * runs. For a one-shot it cannot be applied: the schedule advances on a client's report that
+     * playback ended, so a one-shot delivered to nobody would leave the device parked forever.
      *
      * @return the playback id, or {@link PlaybackSessionRegistry#NO_PLAYBACK} if the audio could
      *         not be loaded, in which case nothing was started or registered
@@ -76,16 +85,22 @@ public final class PlaybackDelivery {
         byte[] audioData = AudioStorage.loadForItem(server, media);
         if (audioData == null) return PlaybackSessionRegistry.NO_PLAYBACK;
 
-        PlaybackSessionRegistry.Replay replay = loop
-                ? new PlaybackSessionRegistry.Replay(
-                        media, format, rangePos1, rangePos2, attenuationMode, attenuationRanges, true)
-                : null;
+        PlaybackSessionRegistry.Replay replay = new PlaybackSessionRegistry.Replay(
+                media, format, rangePos1, rangePos2, attenuationMode, attenuationRanges, loop);
         long playbackId = PlaybackSessionRegistry.begin(level, pos, replay);
 
+        // Zero: these players are here for the start, so there is nothing for them to catch up on.
         ClientPlayAudioPayload meta = new ClientPlayAudioPayload(
                 pos, playbackId, audioData.length, format, rangePos1, rangePos2,
-                attenuationMode, attenuationRanges, loop);
+                attenuationMode, attenuationRanges, loop, 0, true);
         for (ServerPlayer player : level.players()) {
+            // Filtered for an endless sound only. A one-shot's completion is reported by a
+            // client, and the schedule advances on that report -- so a one-shot that reached
+            // nobody never ends, and the device parks with its entry still highlighted. That
+            // regression was introduced here on 2026-08-30 by filtering both alike, and it
+            // fires whenever nobody is inside the device's range, which for a station device
+            // is most of the time. The late-delivery fix does not need this filter: a listener
+            // who was not in the level at the start is reached by the sweep either way.
             if (loop && !SpatialGain.audible(player.getX(), player.getY(), player.getZ(),
                     pos, rangePos1, rangePos2, attenuationMode, attenuationRanges)) {
                 // Logged only here, never in the sweep: a player who stays out of range stays
@@ -174,15 +189,33 @@ public final class PlaybackDelivery {
             return;
         }
 
+        // Where the sound has got to, not where it starts. Clamped to the same bound the
+        // decoder enforces, and to that constant rather than to a copy of the number: a value
+        // above it is not refused, it throws a DecoderException inside a clientbound payload,
+        // which drops the player. Found by review on 2026-08-30, when the writer clamped to
+        // Integer.MAX_VALUE and the reader refused anything past seven days -- so a sound that
+        // had been running a week would have disconnected everyone who relogged.
+        //
+        // Clamping does change where an endless sound lands (the residue modulo one pass moves
+        // with the clamp), and that is accepted: this design already treats an endless sound's
+        // phase as unobservable across listeners, and a listener a week late is not in step
+        // with anyone anyway. The client still folds the clamped value modulo one pass, so the
+        // cost stays bounded by the audio. An earlier comment here claimed the clamp was
+        // phase-preserving; it is not, and it was corrected on 2026-09-02.
+        long elapsedTicks = Math.max(0, level.getGameTime() - pending.startedAtGameTime());
+        int offsetMillis = (int) Math.min(
+                ClientPlayAudioPayload.MAX_START_OFFSET_MILLIS, elapsedTicks * MILLIS_PER_TICK);
+
         PacketDistributor.sendToPlayer(player, new ClientPlayAudioPayload(
                 pending.pos(), pending.playbackId(), audioData.length, replay.format(),
                 replay.rangePos1(), replay.rangePos2(),
-                replay.attenuationMode(), replay.attenuationRanges(), replay.loop()));
+                replay.attenuationMode(), replay.attenuationRanges(), replay.loop(),
+                offsetMillis, true));
         ClientAudioChunkPayload.sendChunked(player, pending.pos(), pending.playbackId(), audioData);
         PlaybackSessionRegistry.markDelivered(
                 level.dimension(), pending.pos(), pending.playbackId(), player.getUUID());
-        SIGNAL.info("sent {}", describe(level, pending.pos(), pending.playbackId(), replay.loop(),
-                player, replay.rangePos1(), replay.rangePos2(),
-                replay.attenuationMode(), replay.attenuationRanges(), "sweep"));
+        SIGNAL.info("sent {} offset={}", describe(level, pending.pos(), pending.playbackId(),
+                replay.loop(), player, replay.rangePos1(), replay.rangePos2(),
+                replay.attenuationMode(), replay.attenuationRanges(), "sweep"), offsetMillis);
     }
 }

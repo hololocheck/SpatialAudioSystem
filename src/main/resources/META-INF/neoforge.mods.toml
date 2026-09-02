@@ -16,15 +16,22 @@ Includes playback devices, recording devices, recording media, and range specifi
 
 
 # Required Manta floor = the EMBEDDED version (${manta_version} from gradle.properties,
-# expanded by processResources). With every consumer declaring [embedded,2), older
+# expanded by processResources). With every consumer declaring [embedded,3), older
 # embedded Mantas fall out of the JarJar range intersection and the newest one wins
-# deterministically; this mod then runs on it via Manta's <2.0 binary compatibility.
+# deterministically.
+# 2026-09-02 correction: this used to say "this mod then runs on it via Manta's <2.0 binary
+# compatibility". Manta 2.0 collapsed the public surface onto com.manta.api.**; the shipped
+# (obfuscated) jar no longer carries the 1.x public types, so a 1.x consumer does not link on
+# 2.x. The readable jar still holds belugalab/** internals, so "deleted belugalab.**" would
+# overstate it. Mixing a 1.x consumer in empties the range intersection; what NeoForge then
+# reports has not been exercised here.
 # Manta ships embedded in this jar, so a SAS-only install always satisfies the range.
-# (SAS hard-references com.manta.api.image.MantaImage, first shipped in 1.0.7.)
+# (SAS hard-references 18 Manta types: 17 under com.manta.api.** plus com.manta.MantaBootstrap;
+#  all but MantaImage first exist in 2.0.0.)
 [[dependencies.spatialaudiosystem]]
 modId = "manta"
 type = "required"
-versionRange = "[${manta_version},2)"
+versionRange = "[${manta_version},3)"
 ordering = "AFTER"
 side = "BOTH"
 

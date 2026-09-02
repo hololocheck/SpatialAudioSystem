@@ -217,4 +217,94 @@ class PlaybackSessionRegistryTest {
         assertThat(PlaybackSessionRegistry.pendingFor(overworld.dimension(), ALICE)).isEmpty();
         assertThat(PlaybackSessionRegistry.isEmpty()).isTrue();
     }
+
+    private static PlaybackSessionRegistry.Replay endlessReplay(boolean loop) {
+        int[] ranges = new int[6];
+        java.util.Arrays.fill(ranges, 8);
+        return new PlaybackSessionRegistry.Replay(
+                net.minecraft.world.item.ItemStack.EMPTY, "wav", null, null, true, ranges, loop);
+    }
+
+    // ===== the catch-up report gate and the withdrawn-loop marker (2026-09-02) =====
+
+    private static net.minecraft.server.level.ServerLevel overworldLevel() {
+        net.minecraft.server.level.ServerLevel level =
+                org.mockito.Mockito.mock(net.minecraft.server.level.ServerLevel.class);
+        org.mockito.Mockito.when(level.dimension()).thenReturn(
+                net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.DIMENSION,
+                        net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("minecraft", "overworld")));
+        org.mockito.Mockito.when(level.getGameTime()).thenReturn(100L);
+        return level;
+    }
+
+    private static PlaybackSessionRegistry.Replay replay(boolean loop) {
+        int[] ranges = new int[6];
+        java.util.Arrays.fill(ranges, 8);
+        return new PlaybackSessionRegistry.Replay(
+                net.minecraft.world.item.ItemStack.EMPTY, "ogg", null, null, true, ranges, loop);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: a catch-up report is accepted once, from a player who was sent the sound")
+    void aCatchUpReportIsAcceptedOnceFromADeliveredPlayer() {
+        PlaybackSessionRegistry.clear();
+        net.minecraft.server.level.ServerLevel level = overworldLevel();
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(1, 2, 3);
+        java.util.UUID player = java.util.UUID.randomUUID();
+        long id = PlaybackSessionRegistry.begin(level, pos, replay(false));
+        PlaybackSessionRegistry.markDelivered(level.dimension(), pos, id, player);
+
+        assertThat(PlaybackSessionRegistry.acceptCatchUpReport(level, pos, id, player)).isTrue();
+        // The line exists so the log can be trusted about what a client did; one client must
+        // not be able to write it a thousand times.
+        assertThat(PlaybackSessionRegistry.acceptCatchUpReport(level, pos, id, player))
+                .as("a second report from the same player is refused").isFalse();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: a catch-up report is refused for a sound the player was never sent")
+    void aCatchUpReportFromAnUndeliveredPlayerIsRefused() {
+        PlaybackSessionRegistry.clear();
+        net.minecraft.server.level.ServerLevel level = overworldLevel();
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(1, 2, 3);
+        long id = PlaybackSessionRegistry.begin(level, pos, replay(false));
+
+        assertThat(PlaybackSessionRegistry.acceptCatchUpReport(level, pos, id, java.util.UUID.randomUUID()))
+                .as("a client that learned the id some other way cannot write the log").isFalse();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: a catch-up report naming a stale id is refused")
+    void aCatchUpReportWithAStaleIdIsRefused() {
+        PlaybackSessionRegistry.clear();
+        net.minecraft.server.level.ServerLevel level = overworldLevel();
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(1, 2, 3);
+        java.util.UUID player = java.util.UUID.randomUUID();
+        long id = PlaybackSessionRegistry.begin(level, pos, replay(false));
+        PlaybackSessionRegistry.markDelivered(level.dimension(), pos, id, player);
+
+        assertThat(PlaybackSessionRegistry.acceptCatchUpReport(level, pos, id + 1, player)).isFalse();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-009: forgetting a player lets their next delivery report again")
+    void forgettingAPlayerReArmsTheirReport() {
+        PlaybackSessionRegistry.clear();
+        net.minecraft.server.level.ServerLevel level = overworldLevel();
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(1, 2, 3);
+        java.util.UUID player = java.util.UUID.randomUUID();
+        long id = PlaybackSessionRegistry.begin(level, pos, replay(true));
+        PlaybackSessionRegistry.markDelivered(level.dimension(), pos, id, player);
+        assertThat(PlaybackSessionRegistry.acceptCatchUpReport(level, pos, id, player)).isTrue();
+
+        // A respawn, a dimension change or a relog: the sweep delivers the sound again, and
+        // the report from that second delivery is the one carrying a non-zero offset -- the
+        // very case the report exists to observe. The old mark refused exactly that report.
+        PlaybackSessionRegistry.forgetPlayer(player);
+        PlaybackSessionRegistry.markDelivered(level.dimension(), pos, id, player);
+
+        assertThat(PlaybackSessionRegistry.acceptCatchUpReport(level, pos, id, player))
+                .as("the re-delivery's report must be accepted").isTrue();
+    }
 }

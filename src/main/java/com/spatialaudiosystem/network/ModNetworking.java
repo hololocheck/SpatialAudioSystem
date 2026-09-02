@@ -13,7 +13,11 @@ public class ModNetworking {
         // 1.3 split playback_finished out of playback_control so the stop command can be
         //     checked against the sender's open menu without silencing natural completion.
         // 1.4 every audio packet names the playback it belongs to.
-        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.4");
+        // 1.5 client_play_audio carries a start offset and a synchronised flag; client_set_loop
+        //     and catchup_report added. Bumped so a client on the old shape is refused at
+        //     login instead of reading the new fields as garbage -- which is the exact shape
+        //     of a late joiner ignoring its offset (2026-09-02).
+        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.5");
 
         registrar.playToServer(
                 AudioUploadStartPayload.TYPE,
@@ -109,6 +113,18 @@ public class ModNetworking {
                 ClientStopAudioPayload.TYPE,
                 ClientStopAudioPayload.STREAM_CODEC,
                 ClientStopAudioPayload::handle
+        );
+
+        registrar.playToClient(
+                ClientSetLoopPayload.TYPE,
+                ClientSetLoopPayload.STREAM_CODEC,
+                ClientSetLoopPayload::handle
+        );
+
+        registrar.playToServer(
+                CatchUpReportPayload.TYPE,
+                CatchUpReportPayload.STREAM_CODEC,
+                CatchUpReportPayload::handle
         );
 
         // Optional: won't block connection if server/client versions differ

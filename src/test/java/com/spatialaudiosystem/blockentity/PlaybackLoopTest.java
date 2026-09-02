@@ -4,6 +4,7 @@ import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.network.ClientPlayAudioPayload;
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -285,6 +286,16 @@ class PlaybackLoopTest {
         return d;
     }
 
+    private static boolean readBoolean(Object target, String field) {
+        try {
+            java.lang.reflect.Field f = PlaybackDeviceBlockEntity.class.getDeclaredField(field);
+            f.setAccessible(true);
+            return f.getBoolean(target);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not read " + field, e);
+        }
+    }
+
     private static ServerLevel serverLevelAt(long gameTime) {
         ServerLevel level = org.mockito.Mockito.mock(ServerLevel.class);
         org.mockito.Mockito.when(level.isClientSide()).thenReturn(false);
@@ -560,7 +571,7 @@ class PlaybackLoopTest {
             ClientPlayAudioPayload sent = new ClientPlayAudioPayload(
                     new BlockPos(4, 64, -9), 0x0123456789ABCDEFL, 4096, "ogg",
                     new BlockPos(1, 2, 3), new BlockPos(4, 5, 6),
-                    true, new int[]{8, 7, 6, 5, 4, 3}, loop);
+                    true, new int[]{8, 7, 6, 5, 4, 3}, loop, 0, true);
 
             FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
             ClientPlayAudioPayload.STREAM_CODEC.encode(buf, sent);
@@ -578,5 +589,372 @@ class PlaybackLoopTest {
             assertThat(back.format()).isEqualTo(sent.format());
             assertThat(back.attenuationRanges()).isEqualTo(sent.attenuationRanges());
         }
+    }
+
+    /**
+     * The single medium's endless play, armed the way {@link PlaybackDeviceBlockEntity} arms it:
+     * no schedule entry, the endless button on, the slot filled, and that slot is what started.
+     */
+    private static PlaybackDeviceBlockEntity singleEndlessDevice() {
+        PlaybackDeviceBlockEntity d = device(1);
+        set(d, "loopingEntry", -1);
+        set(d, "normalLoop", true);
+        set(d, "playingSingle", true);
+        set(d, "isPlaying", true);
+        net.neoforged.neoforge.items.ItemStackHandler slots =
+                new net.neoforged.neoforge.items.ItemStackHandler(8);
+        slots.setStackInSlot(0, new net.minecraft.world.item.ItemStack(
+                net.minecraft.world.item.Items.PAPER));
+        set(d, "inventory", slots);
+        return d;
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: an endless single medium reaches the restore after a reload")
+    void anEndlessSingleMediumReachesRestore() {
+        PlaybackSessionRegistry.clear();
+        // The branch restoreLoop takes for loopingEntry < 0 had no caller in any test: every
+        // restore test built a device armed on a playlist entry, so a mutation that turned the
+        // single-medium branch into `return;` left the whole suite green.
+        assertThat(tickAttemptsRestore(singleEndlessDevice(), 1_234_567L))
+                .as("a loop that does not come back after a chunk reload is not endless")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: an empty slot does not keep the single medium armed")
+    void anEmptySlotDoesNotReachRestore() {
+        PlaybackSessionRegistry.clear();
+        PlaybackDeviceBlockEntity d = singleEndlessDevice();
+        set(d, "inventory", new net.neoforged.neoforge.items.ItemStackHandler(8));
+        // Otherwise a device whose medium was taken out would go on retrying for ever, and the
+        // runaway timeout that would have cleaned it up is suppressed while it is armed.
+        assertThat(tickAttemptsRestore(d, 1_234_567L)).isFalse();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: the single-medium restore actually runs, not merely gets near")
+    void theSingleMediumRestoreBranchRuns() {
+        PlaybackSessionRegistry.clear();
+        PlaybackDeviceBlockEntity d = singleEndlessDevice();
+
+        PlaybackDeviceBlockEntity.tick(serverLevelAt(1_234_567L), BlockPos.ZERO, null, d);
+
+        // The retry stamp is set one line BEFORE restoreLoop is called, so a test that only
+        // watches the stamp cannot tell the branch ran from the branch being dead -- which is
+        // what the two tests above do, and why this one reads a value only the branch writes.
+        // The slot holds an item with no audio, so playMedia gives up and hands back false.
+        assertThat(readBoolean(d, "playingSingle"))
+                .as("the branch assigns playingSingle from playMedia; a dead branch leaves it true")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: a start with nothing in the slot leaves the schedule's loop alone")
+    void anEmptySlotLeavesTheScheduleLoopArmed() {
+        PlaybackDeviceBlockEntity d = device(3);
+        set(d, "loopingEntry", 2);
+        set(d, "inventory", new net.neoforged.neoforge.items.ItemStackHandler(8));
+
+        d.startPlayback();
+
+        // A redstone pulse into an empty slot used to drop this arm without stopping the sound,
+        // and the safety-net timeout then ended a running playlist loop ten minutes later. The
+        // first version of this test asserted that failure as the requirement (2026-09-02).
+        assertThat(d.getLoopingEntry())
+                .as("nothing started, so nothing about what is playing changed")
+                .isEqualTo(2);
+    }
+
+    // ===== the endless button reaches the sound that is playing (2026-09-02) =====
+
+    private static PlaybackSessionRegistry.Replay singleReplay(boolean loop) {
+        int[] ranges = new int[6];
+        Arrays.fill(ranges, 8);
+        return new PlaybackSessionRegistry.Replay(ItemStack.EMPTY, "ogg", null, null, true, ranges, loop);
+    }
+
+    /** A device whose single medium is sounding, on a server level with nobody online. */
+    private static PlaybackDeviceBlockEntity playingSingleDevice(ServerLevel level, boolean endless) {
+        PlaybackDeviceBlockEntity d = device(0);
+        setInherited(d, "level", level);
+        setInherited(d, "worldPosition", BlockPos.ZERO);
+        setInherited(d, "blockState", net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+        // Objenesis skips field initialisers, so the inventory is null unless set. An empty
+        // slot is what the ON path reads: the restart cannot succeed here (no storage), and the
+        // assertion is on the old session being superseded.
+        set(d, "inventory", new net.neoforged.neoforge.items.ItemStackHandler(8));
+        set(d, "normalLoop", endless);
+        set(d, "playingSingle", true);
+        set(d, "isPlaying", true);
+        return d;
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-005: turning the endless button off retires the sound on the server")
+    void withdrawingTheLoopRetiresTheSession() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, true);
+        long id = PlaybackSessionRegistry.begin(level, BlockPos.ZERO, singleReplay(true));
+
+        d.toggleNormalLoop();
+
+        // Retired here, not on the first client's finish report. With the record gone, nobody
+        // can be delivered a pass that ends at decode speed and reports the sound finished for
+        // everyone still hearing it, and no report can retire it twice.
+        assertThat(PlaybackSessionRegistry.currentId(level, BlockPos.ZERO))
+                .as("the session is gone the moment endlessness is withdrawn")
+                .isEqualTo(PlaybackSessionRegistry.NO_PLAYBACK);
+        assertThat(d.isPlaying()).as("the device reads stopped").isFalse();
+        assertThat(d.isNormalLoop()).isFalse();
+        assertThat(id).isNotEqualTo(PlaybackSessionRegistry.NO_PLAYBACK);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-005: turning the endless button on restarts the sound through the filtered start")
+    void grantingTheLoopRestartsTheSound() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, false);
+        long id = PlaybackSessionRegistry.begin(level, BlockPos.ZERO, singleReplay(false));
+
+        d.toggleNormalLoop();
+
+        // The one-shot went to every player in the dimension; flipping all of them to endless
+        // would pin a decode thread on players who cannot hear it, and the far ones would still
+        // report the old id finished and retire the sound under the near ones. So the old
+        // session ends and a new, filtered one starts. Here the start cannot succeed (no
+        // storage), which is why the assertion is on the old id being gone, not on the new one.
+        assertThat(PlaybackSessionRegistry.currentId(level, BlockPos.ZERO))
+                .as("the one-shot's session is superseded")
+                .isNotEqualTo(id);
+        assertThat(d.isNormalLoop()).isTrue();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-005: withdrawing the loop tells every listener to stop repeating")
+    void withdrawingTheLoopTellsEveryListener() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        net.minecraft.server.level.ServerPlayer near = org.mockito.Mockito.mock(net.minecraft.server.level.ServerPlayer.class);
+        org.mockito.Mockito.when(level.players()).thenReturn(java.util.List.of(near));
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, true);
+        long id = PlaybackSessionRegistry.begin(level, BlockPos.ZERO, singleReplay(true));
+
+        try (org.mockito.MockedStatic<net.neoforged.neoforge.network.PacketDistributor> packets =
+                     org.mockito.Mockito.mockStatic(net.neoforged.neoforge.network.PacketDistributor.class)) {
+            d.toggleNormalLoop();
+
+            // The retirement alone would leave every client looping with nothing left on the
+            // server to end it. This message is what makes the end per-client, and no other
+            // test executed the loop that sends it (the mocked level had no players).
+            packets.verify(() -> net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
+                    org.mockito.ArgumentMatchers.eq(near),
+                    org.mockito.ArgumentMatchers.argThat(p ->
+                            p instanceof com.spatialaudiosystem.network.ClientSetLoopPayload s
+                                    && s.playbackId() == id && !s.loop())));
+        }
+    }
+
+    // ===== superseding: every start stops what was sounding (2026-09-02) =====
+
+    /** A medium the device will accept: hasAudioData reads only the file-name component. */
+    private static ItemStack mediumWithAudio() {
+        ItemStack stack = new ItemStack(net.minecraft.world.item.Items.PAPER);
+        stack.set(com.spatialaudiosystem.item.ModDataComponents.AUDIO_FILE_NAME.get(), "hum.wav");
+        return stack;
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: Play All supersedes an endless single medium, not only an endless entry")
+    void playAllSupersedesAnEndlessSingleMedium() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, true);
+        // Endless only counts with a medium in the slot -- the fixture's slot is empty so the
+        // restart tests fail their start; this test needs the sound to be genuinely endless.
+        net.neoforged.neoforge.items.ItemStackHandler slots = new net.neoforged.neoforge.items.ItemStackHandler(8);
+        slots.setStackInSlot(0, mediumWithAudio());
+        set(d, "inventory", slots);
+        org.mockito.Mockito.when(level.getBlockEntity(BlockPos.ZERO)).thenReturn(d);
+        PlaybackSessionRegistry.begin(level, BlockPos.ZERO, singleReplay(true));
+
+        com.spatialaudiosystem.audio.PlaybackScheduler.playAll(level, BlockPos.ZERO);
+
+        // The gate used to read loopingEntry alone, which the endless single medium leaves at
+        // -1. A listener who had walked out of range then kept the old sound running with no
+        // server record left to stop it, because the filtered start never reached them.
+        assertThat(d.isPlaying()).as("the single medium was stopped before the sequence").isFalse();
+        assertThat(PlaybackSessionRegistry.currentId(level, BlockPos.ZERO))
+                .as("its session is gone").isEqualTo(PlaybackSessionRegistry.NO_PLAYBACK);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: starting the single medium supersedes the schedule's endless entry")
+    void startingTheSingleMediumSupersedesTheScheduleLoop() {
+        PlaybackDeviceBlockEntity d = soundingDeviceOnAServer();   // armed on entry 0, playing
+        net.neoforged.neoforge.items.ItemStackHandler slots = new net.neoforged.neoforge.items.ItemStackHandler(8);
+        slots.setStackInSlot(0, mediumWithAudio());
+        set(d, "inventory", slots);
+
+        d.startPlayback();
+
+        // Both arms set at once made restoreLoop bring back a playlist entry instead of the
+        // medium in the slot after a chunk reload. The empty-slot test above cannot reach this
+        // line -- it returns before it -- so this one carries the supersede half on its own.
+        assertThat(d.getLoopingEntry()).as("the schedule's arm is dropped by the stop").isEqualTo(-1);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: starting the single medium passes the endless button's state")
+    void startingTheSingleMediumPassesTheEndlessFlag() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, true);
+        set(d, "isPlaying", false);
+        net.neoforged.neoforge.items.ItemStackHandler slots = new net.neoforged.neoforge.items.ItemStackHandler(8);
+        slots.setStackInSlot(0, mediumWithAudio());
+        set(d, "inventory", slots);
+
+        try (org.mockito.MockedStatic<com.spatialaudiosystem.audio.PlaybackDelivery> delivery =
+                     org.mockito.Mockito.mockStatic(com.spatialaudiosystem.audio.PlaybackDelivery.class)) {
+            delivery.when(() -> com.spatialaudiosystem.audio.PlaybackDelivery.start(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean()))
+                    .thenReturn(PlaybackSessionRegistry.NO_PLAYBACK);
+
+            d.startPlayback();
+
+            // The one argument the button controls. A literal false here would make the endless
+            // button decorative for a fresh press, and no other test reaches this call.
+            delivery.verify(() -> com.spatialaudiosystem.audio.PlaybackDelivery.start(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(BlockPos.ZERO),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.eq(true)));
+        }
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: starting the single medium with the endless button off starts a one-shot")
+    void startingTheSingleMediumWithTheButtonOffStartsAOneShot() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, false);
+        set(d, "isPlaying", false);
+        net.neoforged.neoforge.items.ItemStackHandler slots = new net.neoforged.neoforge.items.ItemStackHandler(8);
+        slots.setStackInSlot(0, mediumWithAudio());
+        set(d, "inventory", slots);
+
+        try (org.mockito.MockedStatic<com.spatialaudiosystem.audio.PlaybackDelivery> delivery =
+                     org.mockito.Mockito.mockStatic(com.spatialaudiosystem.audio.PlaybackDelivery.class)) {
+            delivery.when(() -> com.spatialaudiosystem.audio.PlaybackDelivery.start(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean()))
+                    .thenReturn(PlaybackSessionRegistry.NO_PLAYBACK);
+
+            d.startPlayback();
+
+            // The other half of the pin. The test above samples only the point where the flag is
+            // already on, so a call site hardcoded to true -- every press endless -- stayed green.
+            delivery.verify(() -> com.spatialaudiosystem.audio.PlaybackDelivery.start(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(BlockPos.ZERO),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.eq(false)));
+        }
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: taking the medium out of a sounding single slot stops the sound")
+    void emptyingTheMediaSlotStopsTheSingleSound() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, true);   // slot already empty
+        PlaybackSessionRegistry.begin(level, BlockPos.ZERO, singleReplay(true));
+
+        call(d, "onMediaSlotChanged", new Class<?>[0]);
+
+        // Without this the clients keep looping while the server's "sounding endlessly" test,
+        // which reads the slot, says nothing endless is playing -- so a later Play All started
+        // over it without a stop, and listeners out of range kept the old sound for ever.
+        assertThat(d.isPlaying()).as("the device stops when its medium is gone").isFalse();
+        assertThat(PlaybackSessionRegistry.currentId(level, BlockPos.ZERO))
+                .isEqualTo(PlaybackSessionRegistry.NO_PLAYBACK);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: a slot change that leaves the medium in place changes nothing")
+    void aMediaSlotChangeWithTheMediumPresentIsIgnored() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, true);
+        net.neoforged.neoforge.items.ItemStackHandler slots = new net.neoforged.neoforge.items.ItemStackHandler(8);
+        slots.setStackInSlot(0, mediumWithAudio());
+        set(d, "inventory", slots);
+        long id = PlaybackSessionRegistry.begin(level, BlockPos.ZERO, singleReplay(true));
+
+        call(d, "onMediaSlotChanged", new Class<?>[0]);
+
+        // The hook fires for any change to the slot, including the insertion that started it.
+        assertThat(d.isPlaying()).isTrue();
+        assertThat(PlaybackSessionRegistry.currentId(level, BlockPos.ZERO)).isEqualTo(id);
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: the media handler calls the slot-changed hook")
+    void theMediaHandlerCallsTheSlotChangedHook() throws Exception {
+        // The two slot tests above call onMediaSlotChanged directly, because the block entity
+        // is built without its field initialisers and its real handler does not exist on such
+        // an instance. Delete the one line that wires the handler to the hook and both stay
+        // green while every real removal path stops stopping the sound (review, 2026-09-02).
+        java.nio.file.Path src = null;
+        for (java.nio.file.Path base = java.nio.file.Paths.get("").toAbsolutePath();
+             base != null; base = base.getParent()) {
+            java.nio.file.Path c = base.resolve(
+                    "src/main/java/com/spatialaudiosystem/blockentity/PlaybackDeviceBlockEntity.java");
+            if (java.nio.file.Files.isRegularFile(c)) { src = c; break; }
+        }
+        assertThat(src).isNotNull();
+        String text = java.nio.file.Files.readString(src, java.nio.charset.StandardCharsets.UTF_8);
+        int handler = text.indexOf("private final ItemStackHandler inventory");
+        assertThat(handler).as("the media handler declaration").isGreaterThan(-1);
+        int body = text.indexOf("protected void onContentsChanged(int slot) {", handler);
+        assertThat(body).as("the handler's onContentsChanged").isGreaterThan(-1);
+        String method = methodBodyAt(text, text.indexOf('{', body));
+
+        boolean called = java.util.Arrays.stream(stripComments(method).split("\\R"))
+                .map(String::strip)
+                .anyMatch(line -> line.equals("if (slot == MEDIA_SLOT) onMediaSlotChanged();"));
+        assertThat(called)
+                .as("the media handler must call the hook, as a live statement in its own body")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-008: emptying the barred single slot does not stop a schedule track")
+    void aScheduleTrackIsNotStoppedByTheMediaSlot() {
+        PlaybackSessionRegistry.clear();
+        ServerLevel level = serverLevelAt(1_000L);
+        PlaybackDeviceBlockEntity d = playingSingleDevice(level, true);   // slot empty
+        set(d, "playingSingle", false);                                   // the sound is the schedule's
+        long id = PlaybackSessionRegistry.begin(level, BlockPos.ZERO, singleReplay(true));
+
+        call(d, "onMediaSlotChanged", new Class<?>[0]);
+
+        // Schedule mode bars the single slot but never empties it; pulling the leftover medium
+        // out while Play All runs must not stop the sequence. Without the playingSingle term
+        // in the guard it did, and no other test constructed this state.
+        assertThat(d.isPlaying()).isTrue();
+        assertThat(PlaybackSessionRegistry.currentId(level, BlockPos.ZERO)).isEqualTo(id);
     }
 }

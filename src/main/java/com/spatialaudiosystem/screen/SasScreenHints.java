@@ -1,6 +1,6 @@
 package com.spatialaudiosystem.screen;
 
-import belugalab.tsu.api.HintRegistry;
+import com.manta.api.hud.HintRegistry;
 
 /**
  * Central registration of SAS screen element classes to their hint text and wiki page.
@@ -64,23 +64,23 @@ public final class SasScreenHints {
         HintRegistry.register("pb-atten-range", "sas.hint.pb_atten_range", WIKI_RANGE);
         HintRegistry.register("pb-play-btn", "sas.hint.pb_play", WIKI_PLAYBACK);
         HintRegistry.register("pb-stop-btn", "sas.hint.pb_stop", WIKI_PLAYBACK);
+        HintRegistry.register("pb-loop-btn", "sas.hint.pb_loop", WIKI_PLAYBACK);
         HintRegistry.register("pb-atten-label", "sas.hint.pb_atten", WIKI_PLAYBACK);
         HintRegistry.register("pb-atten-track", "sas.hint.pb_atten", WIKI_PLAYBACK);
         HintRegistry.register("pb-atten-knob", "sas.hint.pb_atten", WIKI_PLAYBACK);
         HintRegistry.register("pb-range-label", "sas.hint.pb_showrange", WIKI_RANGE);
         HintRegistry.register("pb-range-track", "sas.hint.pb_showrange", WIKI_RANGE);
         HintRegistry.register("pb-range-knob", "sas.hint.pb_showrange", WIKI_RANGE);
-        HintRegistry.register("pb-sched-toggle-track", "sas.hint.sched_toggle", WIKI_SCHEDULE);
-        HintRegistry.register("pb-sched-toggle-knob", "sas.hint.sched_toggle", WIKI_SCHEDULE);
         HintRegistry.register("pb-sched-btn", "sas.hint.pb_sched", WIKI_SCHEDULE);
         HintRegistry.register("pb-media-slot", "sas.hint.pb_media_slot", WIKI_PLAYBACK);
         HintRegistry.register("pb-media-slot-label", "sas.hint.pb_media_slot", WIKI_PLAYBACK);
         HintRegistry.register("pb-media-lock", "sas.hint.pb_media_slot", WIKI_PLAYBACK);
         HintRegistry.register("pb-range-slot", "sas.hint.pb_range_slot", WIKI_RANGE);
-        HintRegistry.register("pb-range-slot-label", "sas.hint.pb_range_slot", WIKI_RANGE);
     }
 
     private static void registerSchedule() {
+        HintRegistry.register("pb-schedplay-track", "sas.hint.sched_toggle", WIKI_SCHEDULE);
+        HintRegistry.register("pb-schedplay-knob", "sas.hint.sched_toggle", WIKI_SCHEDULE);
         HintRegistry.register("pb-sched-close", "sas.hint.close", WIKI_SCHEDULE);
         HintRegistry.register("pb-add-entry-btn", "sas.hint.add_entry", WIKI_SCHEDULE);
         HintRegistry.register("pb-sched-playall-btn", "sas.hint.play_all", WIKI_SCHEDULE);

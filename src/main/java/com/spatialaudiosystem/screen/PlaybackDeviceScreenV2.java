@@ -1,8 +1,8 @@
 package com.spatialaudiosystem.screen;
 
-import belugalab.experience.controller.ToggleSwitchController;
-import belugalab.mcss3.screen.JsonLayoutEngine;
-import belugalab.mcss3.screen.JsonLayoutScreen;
+import com.manta.api.controller.ToggleSwitchController;
+import com.manta.api.screen.JsonLayoutEngine;
+import com.manta.api.screen.JsonLayoutScreen;
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
 import com.spatialaudiosystem.client.ClientArtCache;
 import com.spatialaudiosystem.item.ModDataComponents;
@@ -90,15 +90,24 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                 PacketDistributor.sendToServer(new ToggleRangeDisplayPayload(pos()));
             });
 
-    /** Schedule mode: arms the ♪ button and bars the media slot (server flips the real state). */
+    /** Schedule mode: bars the media slot. Flipped from inside the schedule popup now. */
     private boolean scheduleModeOn;
+    /** Endless play for the single medium, independent of the schedule's own endless entry. */
+    private boolean normalLoopOn;
 
-    private final ToggleSwitchController scheduleToggle = new ToggleSwitchController(
-            "pb-sched-toggle-track", "pb-sched-toggle-knob",
+    /**
+     * "Play with the schedule", living inside the schedule popup.
+     *
+     * <p>It used to sit on the main screen beside the ♪ button, where it read as arming that
+     * button. Moved here because its real job is the other one it always had: deciding whether
+     * the schedule owns playback, which is what bars the single media slot. Keeping media in a
+     * schedule you are not currently playing is a reasonable thing to want.
+     */
+    private final ToggleSwitchController schedulePlaybackToggle = new ToggleSwitchController(
+            "pb-schedplay-track", "pb-schedplay-knob",
             () -> scheduleModeOn,
             v -> {
                 scheduleModeOn = v;
-                if (!v) closeSchedule();
                 PacketDistributor.sendToServer(new PlaylistCommandPayload(
                         pos(), PlaylistCommandPayload.OP_TOGGLE_MODE, 0, 0));
             });
@@ -114,6 +123,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         this.attenuationOn = be.isAttenuationMode();
         this.rangeVisible = be.isShowRange();
         this.scheduleModeOn = be.isScheduleMode();
+        this.normalLoopOn = be.isNormalLoop();
     }
 
     @Override
@@ -262,13 +272,15 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             case "pb-atten-knob-bg":  return attenuationToggle.knobBg();
             case "pb-range-track-bg": return rangeToggle.trackBg();
             case "pb-range-knob-bg":  return rangeToggle.knobBg();
-            case "pb-sched-toggle-track-bg": return scheduleToggle.trackBg();
-            case "pb-sched-toggle-knob-bg":  return scheduleToggle.knobBg();
+            case "pb-schedplay-track-bg": return schedulePlaybackToggle.trackBg();
+            case "pb-schedplay-knob-bg":  return schedulePlaybackToggle.knobBg();
+            case "pb-loop-btn-color":  return normalLoopOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT;
+            case "pb-loop-btn-border": return normalLoopOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_BORDER;
             case "pb-sched-btn-color":  return scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT;
             case "pb-sched-btn-border": return scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_BORDER;
             case "pb-sched-btn-bg":     return scheduleModeOn ? 0x1AFFC107 : 0x0DFFFFFF;
             case "owner-border":
-                return belugalab.tsu.api.OwnerAccess.ringColor(be().isPrivateMode());
+                return com.manta.api.hud.OwnerAccess.ringColor(be().isPrivateMode());
             case "pb-entry-row-bg": {
                 int idx = JsonLayoutEngine.currentRepeatIndex();
                 return idx == be().getPlayingEntry() ? PLAYING_HL_BG : null;
@@ -288,8 +300,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     public Integer getDynamicNumber(String[] classes, String key, int defaultValue) {
         switch (key) {
             case "pb-atten-knob-x": return attenuationToggle.knobX(defaultValue);
+            case "pb-schedplay-knob-x": return schedulePlaybackToggle.knobX(defaultValue);
             case "pb-range-knob-x": return rangeToggle.knobX(defaultValue);
-            case "pb-sched-toggle-knob-x": return scheduleToggle.knobX(defaultValue);
             case "pb-entry-count":  return showSchedule ? be().getEntryCount() : 0;
             case "pb-playing-frame-y": {
                 int idx = Math.max(0, be().getPlayingEntry());
@@ -327,12 +339,12 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     @Override
     public void onElementClick(String[] classes, int mouseX, int mouseY, int button) {
-        if (belugalab.tsu.api.HintToggleHelper.handleClick(classes)) return;
+        if (com.manta.api.hud.HintToggleHelper.handleClick(classes)) return;
         if (attenuationToggle.handleClick(classes)) return;
         if (rangeToggle.handleClick(classes)) return;
-        if (scheduleToggle.handleClick(classes)) return;
-        if (belugalab.tsu.api.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
-            sendButtonClick(belugalab.tsu.api.OwnerAccess.TOGGLE_BUTTON);
+        if (schedulePlaybackToggle.handleClick(classes)) return;
+        if (com.manta.api.hud.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
+            sendButtonClick(com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON);
             return;
         }
         for (String c : classes) {
@@ -340,7 +352,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                 case "mc-popup-close": onClose(); return;
                 case "wiki-btn": {
                     String pid = wikiPageId();
-                    if (pid != null && !pid.isEmpty()) belugalab.mcss3.wiki.Wiki.open(pid);
+                    if (pid != null && !pid.isEmpty()) com.manta.api.wiki.Wiki.open(pid);
                     return;
                 }
                 case "pb-play-btn":
@@ -351,6 +363,14 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     } else {
                         PacketDistributor.sendToServer(new PlaybackControlPayload(pos(), true));
                     }
+                    return;
+                case "pb-loop-btn":
+                    // Reaches the sound that is playing: off lets every listener finish the
+                    // current pass and stops the device; on makes a playing one-shot endless.
+                    // The server owns both halves (see toggleNormalLoop).
+                    normalLoopOn = !normalLoopOn;
+                    PacketDistributor.sendToServer(new PlaylistCommandPayload(
+                            pos(), PlaylistCommandPayload.OP_TOGGLE_LOOP, 0, 0));
                     return;
                 case "pb-stop-btn":
                 case "pb-sched-stop-btn":
@@ -363,7 +383,6 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                             pos(), PlaylistCommandPayload.OP_PLAY_ALL, 0, 0));
                     return;
                 case "pb-sched-btn":
-                    if (!scheduleModeOn) return;   // armed by the toggle beside it
                     showSchedule = true;
                     scheduleOpenedAtNanos = System.nanoTime();
                     return;
@@ -592,7 +611,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                            int x, int y, int w, int h, int mouseX, int mouseY) {
         switch (key) {
             case "pb-jacket" -> drawJacket(g, x, y, w, h);
-            case "owner-face" -> belugalab.tsu.api.OwnerFacePainter.draw(
+            case "owner-face" -> com.manta.api.hud.OwnerFacePainter.draw(
                     g, x, y, w, h, be().getOwnerUUID());
             default -> { }
         }

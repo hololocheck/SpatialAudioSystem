@@ -1,9 +1,9 @@
 package com.spatialaudiosystem.screen;
 
-import belugalab.tsu.api.HeldTools;
-import belugalab.tsu.api.HudAnimState;
-import belugalab.tsu.api.HudChrome;
-import belugalab.tsu.api.HudConstants;
+import com.manta.api.hud.HeldTools;
+import com.manta.api.hud.HudAnimState;
+import com.manta.api.hud.HudChrome;
+import com.manta.api.hud.HudConstants;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;

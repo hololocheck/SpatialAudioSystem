@@ -1,6 +1,6 @@
 package com.spatialaudiosystem.screen;
 
-import belugalab.mcss3.screen.JsonLayoutScreen;
+import com.manta.api.screen.JsonLayoutScreen;
 import com.spatialaudiosystem.blockentity.RecordingDeviceBlockEntity;
 import com.spatialaudiosystem.client.AudioFilePickerService;
 import com.spatialaudiosystem.client.ClientArtCache;
@@ -137,7 +137,7 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
             return this.menu.isRecording() ? COLOR_WRITING : COLOR_READY;
         }
         if ("owner-border".equals(key)) {   // OwnerAccess ring: green public / red private
-            return belugalab.tsu.api.OwnerAccess.ringColor(this.menu.getBlockEntity().isPrivateMode());
+            return com.manta.api.hud.OwnerAccess.ringColor(this.menu.getBlockEntity().isPrivateMode());
         }
         return null;
     }
@@ -173,16 +173,16 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
 
     @Override
     public void onElementClick(String[] classes, int mouseX, int mouseY, int button) {
-        if (belugalab.tsu.api.HintToggleHelper.handleClick(classes)) return;
-        if (belugalab.tsu.api.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
-            sendButtonClick(belugalab.tsu.api.OwnerAccess.TOGGLE_BUTTON);
+        if (com.manta.api.hud.HintToggleHelper.handleClick(classes)) return;
+        if (com.manta.api.hud.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
+            sendButtonClick(com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON);
             return;
         }
         for (String c : classes) {
             if ("mc-popup-close".equals(c)) { onClose(); return; }
             if ("wiki-btn".equals(c)) {
                 String pid = wikiPageId();
-                if (pid != null && !pid.isEmpty()) belugalab.mcss3.wiki.Wiki.open(pid);
+                if (pid != null && !pid.isEmpty()) com.manta.api.wiki.Wiki.open(pid);
                 return;
             }
             if ("rec-file-btn".equals(c)) {
@@ -231,7 +231,7 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
                            int x, int y, int w, int h, int mouseX, int mouseY) {
         switch (key) {
             case "rec-jacket" -> drawJacket(g, x, y, w, h);
-            case "owner-face" -> belugalab.tsu.api.OwnerFacePainter.draw(
+            case "owner-face" -> com.manta.api.hud.OwnerFacePainter.draw(
                     g, x, y, w, h, this.menu.getBlockEntity().getOwnerUUID());
             default -> { }
         }

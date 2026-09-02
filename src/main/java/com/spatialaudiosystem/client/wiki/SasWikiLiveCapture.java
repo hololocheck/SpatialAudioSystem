@@ -45,7 +45,7 @@ public final class SasWikiLiveCapture {
         net.minecraft.locale.Language original = net.minecraft.locale.Language.getInstance();
         int n = 0;
         // Settle dialog/overlay entry animations so the shot is the finished state.
-        belugalab.mcss3.screen.JsonLayoutScreen.WIKI_CAPTURE_MODE = true;
+        com.manta.api.screen.JsonLayoutScreen.WIKI_CAPTURE_MODE = true;
         try {
             for (String lang : new String[]{"ja_jp", "en_us"}) {
                 try {
@@ -64,7 +64,7 @@ public final class SasWikiLiveCapture {
             }
         } finally {
             net.minecraft.locale.Language.inject(original);
-            belugalab.mcss3.screen.JsonLayoutScreen.WIKI_CAPTURE_MODE = false;
+            com.manta.api.screen.JsonLayoutScreen.WIKI_CAPTURE_MODE = false;
         }
         if (n > 0) LOGGER.info("[SasWikiLive] captured {} wiki screenshots", n);
         return n;

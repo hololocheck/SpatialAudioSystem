@@ -28,6 +28,19 @@ public class AudioManager {
      * from outside, which is why an endless playback needs a line saying it restarted rather than
      * an absence of errors.
      */
+    /**
+     * What the catch-up actually did, per delivery.
+     *
+     * <p>Built because the first version of this could not be observed at all: the server logged
+     * the offset it sent and nothing said whether the client acted on it, so "it plays from the
+     * beginning" and "the offset never arrived" looked identical from the outside. The frame
+     * rate is in the line on purpose -- it is the one input here that comes from the audio
+     * system rather than from this mod, and a line that reports NOT_SPECIFIED would compute a
+     * budget of zero and skip nothing.
+     */
+    private static final org.slf4j.Logger SKIP_SIGNAL =
+            org.slf4j.LoggerFactory.getLogger("SAS-CatchUp");
+
     private static final org.slf4j.Logger LOOP_SIGNAL =
             org.slf4j.LoggerFactory.getLogger("SAS-Loop");
     /**
@@ -90,16 +103,91 @@ public class AudioManager {
         return INSTANCE;
     }
 
+
     /**
-     * attenuationRanges: int[6] = [East(+X), West(-X), Up(+Y), Down(-Y), South(+Z), North(-Z)]
+     * Changes whether the sound playing at {@code pos} keeps repeating.
+     *
+     * <p>Ignored unless the id matches: a message about a playback that has already been
+     * replaced must not reach its successor, which is a different sound at the same block.
      */
-    public void playAudio(Level level, BlockPos pos, long playbackId, byte[] audioData, String format,
-                          BlockPos rangePos1, BlockPos rangePos2, boolean attenuationMode, int[] attenuationRanges) {
-        playAudio(level, pos, playbackId, audioData, format, rangePos1, rangePos2,
-                attenuationMode, attenuationRanges, false);
+    public void setLoop(BlockPos pos, long playbackId, boolean loop) {
+        PlaybackSession session = sessions.get(pos);
+        if (session != null && session.playbackId == playbackId) session.loop = loop;
+        // And the copy held by a transfer that has not finished arriving. There is no session
+        // to change yet in that window, and it is seconds wide for a large file, so without
+        // this the change is simply lost for whoever is still downloading.
+        com.spatialaudiosystem.network.ClientAudioChunkPayload.setLoop(pos, playbackId, loop);
     }
 
     /**
+     * Reports what this listener did with the offset, so the server's log holds both halves.
+     *
+     * <p>Failures are swallowed: this runs on the audio thread and it is a diagnostic. A
+     * listener whose report does not arrive still hears the sound.
+     */
+    private static void reportCatchUp(PlaybackSession session, long usedMillis) {
+        try {
+            // The same number that sized the skip, not a re-derivation: read the clock again and
+            // the report could disagree with the discard it claims to describe.
+            net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                    new com.spatialaudiosystem.network.CatchUpReportPayload(
+                            session.pos, session.playbackId,
+                            (int) Math.min(Integer.MAX_VALUE, usedMillis),
+                            session.skipBytes));
+        } catch (Exception ignored) {
+            // No connection, or a server without this mod. Neither is worth a stack trace on
+            // the audio thread.
+        }
+    }
+
+    /**
+     * Whether this session's end is its own to report to the server.
+     *
+     * <p>Extracted so the suppression can be exercised. Setting {@code superseded} had a check
+     * and reading it did not, which review measured on 2026-08-30: deleting the term from the
+     * condition left all 135 tests green while a same-dimension respawn could again end a sound
+     * for everyone.
+     *
+     * <p>A loop only ends because something stopped it, and whatever stopped it already knows --
+     * reporting would tell the server a sound it just cancelled has finished. A superseded
+     * session's sound is not over either: it is playing under the session that replaced it,
+     * carrying the same playback id, so the server would accept the report and stop it.
+     */
+    static boolean shouldReportFinished(PlaybackSession session) {
+        // An endless sound that was turned off also ends here with loop == false, and reports.
+        // That is fine: the server retired its session at the moment of the withdrawal, so
+        // the report is dropped there. Deciding it here instead was tried on 2026-09-02 and
+        // could not be made right -- a listener delivered after the withdrawal is handed
+        // loop=false and cannot tell that sound from a one-shot past its end.
+        return !session.loop && !session.superseded;
+    }
+
+    /**
+     * Publishes a session as the one playing at its position, cancelling whatever it replaces.
+     *
+     * <p>Separate from {@link #playAudio} so the replacement decision -- which is the whole of
+     * {@code superseded} -- can be exercised without starting a decode thread on a real file.
+     */
+    void publishSession(PlaybackSession session) {
+        PlaybackSession previous = sessions.put(session.pos, session);
+        if (previous != null) {
+            // Same id means this is the same sound arriving again -- a respawn in range makes
+            // the server forget the delivery and the sweep re-send it. The session being
+            // replaced must not then report that sound finished: the report is accepted for
+            // whatever id it names, so it would raise PlaybackEndedEvent, advance the schedule
+            // early and broadcast a stop to everyone still hearing it.
+            previous.superseded = previous.playbackId == session.playbackId;
+            previous.cancel();
+        }
+
+    }
+
+    /**
+     * @param startOffsetMillis how far into the sound this listener starts. Zero for everyone
+     *             present when it began; the elapsed time for a listener who arrived later, so
+     *             they hear the point it has reached rather than starting it again. A one-shot
+     *             whose offset is past its end plays nothing and reports itself finished, which
+     *             is what retires the sound on the server.
      * @param loop when true the decoder restarts at the top instead of finishing, on the same
      *             open line. Looping costs no further network traffic and produces no completion
      *             report, so an endless ambience does not depend on a client → server → client
@@ -107,14 +195,15 @@ public class AudioManager {
      */
     public void playAudio(Level level, BlockPos pos, long playbackId, byte[] audioData, String format,
                           BlockPos rangePos1, BlockPos rangePos2, boolean attenuationMode,
-                          int[] attenuationRanges, boolean loop) {
+                          int[] attenuationRanges, boolean loop, int startOffsetMillis,
+                          boolean synchronised, long announcedAtMillis) {
         PlaybackSession session = new PlaybackSession(
-                pos, playbackId, rangePos1, rangePos2, attenuationMode, attenuationRanges, loop);
+                pos, playbackId, rangePos1, rangePos2, attenuationMode, attenuationRanges, loop,
+                startOffsetMillis, synchronised, announcedAtMillis);
 
         // Published before the worker exists, so a stop in the next millisecond has
         // something to cancel rather than racing an unpublished playback.
-        PlaybackSession previous = sessions.put(pos, session);
-        if (previous != null) previous.cancel();
+        publishSession(session);
 
         Thread playThread = new Thread(() -> {
             try {
@@ -127,7 +216,7 @@ public class AudioManager {
                 // stopped it already knows. Reporting here would tell the server a sound it
                 // just cancelled has finished, and for a loop that was never restarted by a
                 // report in the first place it can only cause a spurious restart.
-                if (!session.loop) {
+                if (shouldReportFinished(session)) {
                     // Report whichever sound this was. The server decides whether it is still
                     // the one playing there.
                     finishedPlaybacks.add(new FinishedPlayback(pos, playbackId));
@@ -225,10 +314,11 @@ public class AudioManager {
                     while ((header = stream[0].readFrame()) != null) {
                         if (playback.isStopped()) break;
                         SampleBuffer output = (SampleBuffer) decoder.decodeFrame(header, stream[0]);
-                        writeFrameToLine(output, line, playback, level);
+                        writeFrameToLine(output, line, playback, level, session);
                         stream[0].closeFrame();
                         producedThisPass = true;
                     }
+                    session.endOfPass();
                     // A pass that produced nothing must not be restarted, or an undecodable
                     // file would spin this thread at full speed forever.
                     if (!producedThisPass) break;
@@ -266,8 +356,40 @@ public class AudioManager {
         }
     }
 
+    /**
+     * Writes decoded PCM to the line, minus whatever this listener is still catching up on.
+     *
+     * <p>Every format goes through here, so "start where the sound has already got to" is one
+     * rule rather than three seeks. A listener who was present from the start has an empty
+     * budget and this is a plain write.
+     */
+    static void writePcm(SourceDataLine line, PlaybackSession session,
+                                 byte[] bytes, int off, int len) {
+        // Sized here rather than where the line is opened, so there is no separate wiring step
+        // to forget: deleting a beginSkip call at the open site left every catch-up test green
+        // while no listener ever caught up. Now the only path that can skip is the one that
+        // writes, and the tests that exercise the writing exercise the sizing with it.
+        session.sizeSkipOnce(line.getFormat());
+        session.bytesThisPass += len;
+        if (session.skipBytes > 0) {
+            // No frame alignment here, deliberately. beginSkip already rounds the budget to a
+            // frame, and every producer that reaches this method hands over whole frames --
+            // AudioInputStream.read is specified to, and the two decoders write interleaved
+            // shorts -- so a partial frame cannot arrive. An alignment step was written here
+            // first and removed on 2026-08-30: no test could make it do anything, and had a
+            // partial frame ever arrived it would still have written one, so it was not the
+            // guard its comment claimed.
+            int drop = (int) Math.min(session.skipBytes, len);
+            session.skipBytes -= drop;
+            off += drop;
+            len -= drop;
+            if (len <= 0) return;
+        }
+        line.write(bytes, off, len);
+    }
+
     private void writeFrameToLine(SampleBuffer output, SourceDataLine line,
-                                   AudioPlayback playback, Level level) {
+                                   AudioPlayback playback, Level level, PlaybackSession session) {
         float gain = playback.getSoftwareGain();
         short[] samples = output.getBuffer();
         int len = output.getBufferLength();
@@ -277,7 +399,7 @@ public class AudioManager {
             bytes[i * 2] = (byte) (s & 0xFF);
             bytes[i * 2 + 1] = (byte) ((s >> 8) & 0xFF);
         }
-        line.write(bytes, 0, len * 2);
+        writePcm(line, session, bytes, 0, len * 2);
     }
 
     private void streamOgg(PlaybackSession session, Level level, byte[] audioData) throws Exception {
@@ -317,6 +439,7 @@ public class AudioManager {
                         int samplesRead = STBVorbis.stb_vorbis_get_samples_short_interleaved(
                                 vorbisHandle, channels, pcmBuffer);
                         if (samplesRead == 0) {
+                            session.endOfPass();
                             if (!session.loop || !producedThisPass) break;
                             // Seeking the open decoder keeps the line running, so the loop
                             // point carries no gap and costs no network traffic.
@@ -335,7 +458,7 @@ public class AudioManager {
                             writeBuffer[i * 2] = (byte) (sample & 0xFF);
                             writeBuffer[i * 2 + 1] = (byte) ((sample >> 8) & 0xFF);
                         }
-                        line.write(writeBuffer, 0, totalShorts * 2);
+                        writePcm(line, session, writeBuffer, 0, totalShorts * 2);
                     }
                 } finally {
                     MemoryUtil.memFree(pcmBuffer);
@@ -383,8 +506,9 @@ public class AudioManager {
                                 buffer[j + 1] = (byte) ((sample >> 8) & 0xFF);
                             }
                         }
-                        line.write(buffer, 0, bytesRead);
+                        writePcm(line, session, buffer, 0, bytesRead);
                     }
+                    session.endOfPass();
                     // A pass that produced nothing must not be restarted, or a file with no
                     // frames would spin this thread at full speed forever.
                     if (!producedThisPass) break;
@@ -489,14 +613,45 @@ public class AudioManager {
         final BlockPos rangePos2;
         final boolean attenuationMode;
         final int[] attenuationRanges;
-        /** Restart at the top on reaching the end, rather than ending. */
-        final boolean loop;
+        /**
+         * Restart at the top on reaching the end, rather than ending.
+         *
+         * <p>Not final: the endless button can be turned off while the sound is playing, and
+         * the decoders read this when they reach the end of a pass, so clearing it lets the
+         * current pass finish and then end normally -- report included.
+         *
+         * <p>Volatile because the decoders run on their own thread and this is set from the
+         * network thread's work queue.
+         */
+        volatile boolean loop;
+        /** How far into the sound this listener starts. Zero for everyone present at the start. */
+        final int startOffsetMillis;
+        /** See ClientPlayAudioPayload#synchronised. */
+        final boolean synchronised;
+        /** When this client learned of the sound, by its own clock. */
+        final long announcedAtMillis;
+
+        /**
+         * PCM bytes still to be discarded before anything reaches the speakers.
+         *
+         * <p>Held in bytes of the open line's own format, so one rule covers MP3, OGG and WAV
+         * without any of them needing a seek. Sized once the line is open, because the frame
+         * rate is not known before that.
+         *
+         * <p>Written and read only on the audio thread for this session.
+         */
+        long skipBytes;
+        /** PCM bytes the current pass has produced, discarded ones included. */
+        long bytesThisPass;
 
         private volatile boolean cancelled;
+        /** Replaced by a fresh delivery of the same sound; its end is not this one's to report. */
+        volatile boolean superseded;
         private volatile AudioPlayback playback;
 
         PlaybackSession(BlockPos pos, long playbackId, BlockPos rangePos1, BlockPos rangePos2,
-                        boolean attenuationMode, int[] attenuationRanges, boolean loop) {
+                        boolean attenuationMode, int[] attenuationRanges, boolean loop,
+                        int startOffsetMillis, boolean synchronised, long announcedAtMillis) {
             this.pos = pos;
             this.playbackId = playbackId;
             this.rangePos1 = rangePos1;
@@ -504,6 +659,79 @@ public class AudioManager {
             this.attenuationMode = attenuationMode;
             this.attenuationRanges = Arrays.copyOf(attenuationRanges, 6);
             this.loop = loop;
+            this.startOffsetMillis = startOffsetMillis;
+            this.synchronised = synchronised;
+            this.announcedAtMillis = announcedAtMillis;
+        }
+
+        private boolean skipSized;
+
+        /** Sizes the discard the first time PCM is written, when the format is known. */
+        void sizeSkipOnce(javax.sound.sampled.AudioFormat format) {
+            if (skipSized) return;
+            skipSized = true;
+            long used = effectiveOffsetMillis();
+            beginSkip(format, used);
+            // Unconditional. The first version logged only when the offset was positive, which
+            // silenced it for the one value it exists to identify: an offset that arrived as
+            // zero is the leading explanation for "it played from the beginning", and gating on
+            // it made that case indistinguishable from "no sound was delivered at all".
+            SKIP_SIGNAL.info("catchup pos={},{},{} id={} sentMs={} transferMs={} usedMs={} "
+                            + "frameRate={} frameSize={} skipBytes={}",
+                    pos.getX(), pos.getY(), pos.getZ(), String.format("%016x", playbackId),
+                    startOffsetMillis, used - startOffsetMillis, used,
+                    format.getFrameRate(), format.getFrameSize(), skipBytes);
+            // And tell the server, because the log above is on this listener's machine and the
+            // listener who matters is somebody else. Sent once per playback, not per buffer.
+            reportCatchUp(this, used);
+        }
+
+        /**
+         * How far into the sound this listener really starts.
+         *
+         * <p>The server's offset is measured when it sends, and the client cannot play until
+         * the whole file has arrived -- a transfer that competes with terrain download for a
+         * player who has just joined. Measured on a live server on 2026-08-30: ten to fifteen
+         * seconds behind everyone else, which is that gap.
+         *
+         * <p>Only for a delivery that was already late. Correcting every listener puts them all
+         * at the sound's true age, which is perfect synchronisation -- and makes nobody able to
+         * hear its opening, including the player who pressed play, because their own transfer
+         * is skipped too. On a short announcement that is most of it. Review caught this on
+         * 2026-08-30, one round after the correction was added.
+         *
+         * <p>The price of the narrower rule: a late listener lands at the true age while the
+         * players present at the start are behind it by their own transfer, so the late one can
+         * be ahead of them by that much. That transfer happens as the sound starts, without a
+         * joining player's terrain download competing for the link, and it is bounded by the
+         * file rather than by how long ago the sound began -- which is what the reported ten to
+         * fifteen seconds was.
+         *
+         * <p>A preview is not synchronised at all and always starts at the top.
+         */
+        long effectiveOffsetMillis() {
+            if (!synchronised || startOffsetMillis <= 0) return startOffsetMillis;
+            return startOffsetMillis + Math.max(0, System.currentTimeMillis() - announcedAtMillis);
+        }
+
+        /** Sizes the discard from the line's format and the offset this listener starts at. */
+        void beginSkip(javax.sound.sampled.AudioFormat format, long offsetMillis) {
+            int frame = Math.max(1, format.getFrameSize());
+            long bytes = (long) (offsetMillis / 1000.0 * format.getFrameRate()) * frame;
+            skipBytes = Math.max(0, bytes - bytes % frame);
+        }
+
+        /**
+         * Folds a leftover discard back inside one pass, at the end of that pass.
+         *
+         * <p>An endless sound can be days old, and discarding days of audio one buffer at a time
+         * would pin this thread for minutes before the first sample. One pass is enough to learn
+         * the real length, and after that the remainder is exact arithmetic. Without this the
+         * cost would scale with how long ago the sound started rather than with the audio.
+         */
+        void endOfPass() {
+            if (skipBytes > 0 && bytesThisPass > 0) skipBytes %= bytesThisPass;
+            bytesThisPass = 0;
         }
 
         boolean isCancelled() {

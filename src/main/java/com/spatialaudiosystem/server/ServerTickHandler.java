@@ -71,12 +71,14 @@ public class ServerTickHandler {
     // stopped — with no dimension-change event to notice it.
     //
     // A same-dimension respawn does not replace the client level, so forgetting there is
-    // unnecessary. It is also harmless, which is why the dimension is not tested: the only
-    // replayable sounds are endless ones, and re-sending one to a client that still has it makes
-    // that client cancel its previous worker, which — being a loop — never reports completion
-    // (AudioManager). The cost is one repeat transfer to one player. When one-shots were
-    // replayable this was not harmless: the report arrived under the unchanged playback id and
-    // ended the sound for everyone.
+    // unnecessary. It is harmless anyway, but no longer for the reason this comment used to
+    // give. That reason was "the only replayable sounds are endless ones", and since 2026-08-30
+    // one-shots are replayable too — a player who joins or walks in mid-sound is started where
+    // it has got to. Re-sending a sound to a client that still has it makes that client cancel
+    // its previous worker, and a cancelled worker used to report completion under the unchanged
+    // playback id, which ended the sound for everyone. What makes it harmless now is
+    // AudioManager's `superseded` flag: a session replaced by the same playback id does not
+    // report. Delete that flag and this becomes a live defect again.
 
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {

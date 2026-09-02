@@ -30,7 +30,7 @@ through the BelugaExperience design workflow on top of the Manta UI runtime.
 |---|---|
 | Minecraft | 1.21.1 |
 | NeoForge | 21.1.220+ |
-| **Manta** | 1.1.12 — bundled in the jar, no separate download |
+| **Manta** | 2.0.0 — bundled in the jar, no separate download |
 
 ### Open source
 
@@ -68,7 +68,7 @@ mp3 / ogg / wav を記憶装置で記録媒体に書き込み、再生装置で�
 |---|---|
 | Minecraft | 1.21.1 |
 | NeoForge | 21.1.220+ |
-| **Manta** | 1.1.12 — jar に同梱、別途ダウンロード不要 |
+| **Manta** | 2.0.0 — jar に同梱、別途ダウンロード不要 |
 
 ### オープンソース
 

@@ -1,7 +1,7 @@
 package com.spatialaudiosystem.layout;
 
-import belugalab.mcss3.ir.compiler.LayoutValidator;
-import belugalab.mcss3.ir.compiler.ValidationContext;
+import com.manta.api.ir.compiler.LayoutValidator;
+import com.manta.api.ir.compiler.ValidationContext;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.DisplayName;

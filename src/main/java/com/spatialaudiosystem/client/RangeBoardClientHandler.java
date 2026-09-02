@@ -1,8 +1,8 @@
 package com.spatialaudiosystem.client;
 
-import belugalab.tsu.api.HeldTools;
-import belugalab.tsu.api.ModifierKeys;
-import belugalab.tsu.api.ScrollCooldown;
+import com.manta.api.hud.HeldTools;
+import com.manta.api.hud.ModifierKeys;
+import com.manta.api.hud.ScrollCooldown;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;

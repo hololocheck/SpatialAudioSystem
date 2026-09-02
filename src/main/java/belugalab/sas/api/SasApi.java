@@ -156,7 +156,7 @@ public final class SasApi {
      * <p>Use a unique {@code pos} per concurrent playback (it is the key for
      * later {@link #stopAudio} calls and for end-of-playback events).
      *
-     * @param level             server level (audio is dispatched to all players, level is informational)
+     * @param level             server level; the sound lives in it, and only players in it hear it
      * @param pos               source position used as playback handle
      * @param recordingMedium   item stack with audio data (must satisfy {@link #hasAudio})
      * @param rangeBoard        optional range board for spatial attenuation (may be {@link ItemStack#EMPTY})
@@ -180,12 +180,21 @@ public final class SasApi {
      * {@link PlaybackEndedEvent} back into {@code playAudio} is not, and stops on an empty
      * server.
      *
-     * <p>An endless sound is also delivered to players who join, arrive from another dimension,
-     * or walk into range while it is still playing. A one-shot is not: it is sent once, to the
-     * players in the level at that moment, exactly as before. Restarting a short sound from the
-     * top for a late arrival would put them out of sync with everyone still hearing the original,
-     * and a one-shot started at a position with no block entity has nothing that ever ends its
-     * session, so it would be offered — long stale — to the first player to walk past.
+     * <p>Any sound still playing is delivered to a player who joins, arrives from another
+     * dimension, or walks into range, endless or not — and that player is started at the point
+     * the sound has reached (their own download time included), which can be ahead of listeners
+     * present from the start by those listeners' own initial download. A one-shot handed a
+     * position past its end plays nothing and reports itself finished,
+     * which is what retires the sound rather than leaving it offerable to the next passer-by --
+     * so long as somebody is there to be handed it. A sound nobody was ever in range of has no
+     * client to report it and stays registered until {@link #stopAudio}.
+     *
+     * <p>The initial send differs between the two, and only there: an endless sound goes to the
+     * players who can hear it, a one-shot to everyone in the level. Filtering an endless sound
+     * is what keeps a decode thread, an open audio line and up to ten megabytes off every player
+     * in the dimension for as long as the server runs. Filtering a one-shot is not possible: its
+     * {@link PlaybackEndedEvent} is raised from a client's report, so a one-shot delivered to
+     * nobody would never complete.
      *
      * @param loop restart at the top instead of ending. Stop it with {@link #stopAudio}.
      * @see #playAudio(ServerLevel, BlockPos, ItemStack, ItemStack, boolean)

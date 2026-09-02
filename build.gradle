@@ -6,7 +6,7 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.42-beta'
 }
 
-version = '1.0.6'
+version = '1.1.0'
 group = 'com.spatialaudiosystem'
 
 repositories {
@@ -67,11 +67,18 @@ dependencies {
     // single Manta — some candidate in every mod's range intersection (JarJar does NOT
     // guarantee the newest). Floor = the EMBEDDED version (manta_version in
     // gradle.properties, the single source for range/prefer/jar path/mods.toml): with
-    // every consumer declaring [embedded,2), older embedded Mantas fall out of the
-    // intersection and the newest one wins deterministically; older mods then run on it
-    // via Manta's <2.0 binary compatibility.
+    // every consumer declaring [embedded,3), older embedded Mantas fall out of the
+    // intersection and the newest one wins deterministically.
+    // 2026-09-02 correction: this comment used to end "older mods then run on it via
+    // Manta's <2.0 binary compatibility". Manta 2.0 collapsed the public surface onto
+    // com.manta.api.**; the obfuscated jar that ships no longer carries the 1.x public
+    // types (belugalab.mcss3.screen.*, belugalab.experience.controller.*, ...), so a
+    // consumer built against 1.x does not link on 2.x. Measured on the shipped 2.0.0 jar:
+    // the readable jar still holds belugalab/** internals, so "deleted belugalab.**" was
+    // an overstatement. Mixing a 1.x consumer in empties the range intersection; what
+    // NeoForge then reports has not been exercised here.
     compileOnly files("../manta/build/libs/manta-${manta_version}.jar")
-    jarJar(implementation("com.manta:manta:[${manta_version},2)")) {
+    jarJar(implementation("com.manta:manta:[${manta_version},3)")) {
         version { prefer manta_version }
     }
 
@@ -113,6 +120,52 @@ tasks.register('allJar', Copy) {
     rename { "${base.archivesName.get()}-${version}-all.jar" }
 }
 tasks.named('build') { dependsOn 'allJar' }
+
+// === Forward half of the Manta compatibility contract (CONCEPT :309, 2026-09-02) ===
+// SAS COMPILES against Manta's readable jar and SHIPS the obfuscated one embedded in this
+// jar. `build` never compares them - it resolves the readable jar and then never opens the
+// jar it just wrote - so a class ProGuard renamed away while SAS still names it surfaces
+// only at runtime, as a lazy NoClassDefFoundError in whichever screen opens first.
+// Manta's own `mantaCompatGate` cannot ask this (its build has no consumer jar) and since
+// Manta 2.0 it says so on every run and names this task. Scanned against the Manta EMBEDDED
+// IN THIS JAR, so the verdict is about the artifact, not about ../manta/build/libs.
+def mantaCompatGateScript = file('../manta/scripts/compat_gate.py')
+
+tasks.register('mantaLinkGate') {
+    group = 'verification'
+    description = 'Every Manta class this jar names must exist in the Manta it embeds'
+    dependsOn tasks.named('jar')
+    doLast {
+        if (!mantaCompatGateScript.exists()) {
+            throw new GradleException(
+                    "manta's compat_gate.py not found at ${mantaCompatGateScript} - this gate " +
+                    "needs the Manta checkout beside this one. Refusing rather than reporting " +
+                    "a pass it did not measure.")
+        }
+        def jar = tasks.named('jar').get().archiveFile.get().asFile
+        if (!jar.exists()) {
+            throw new GradleException("${jar} was not written; nothing to check")
+        }
+        def proc = ['python', mantaCompatGateScript.absolutePath, '--self',
+                    jar.absolutePath].execute()
+        def out = new StringBuilder(), err = new StringBuilder()
+        proc.waitForProcessOutput(out, err)
+        print out.toString()
+        print err.toString()
+        if (proc.exitValue() != 0) {
+            throw new GradleException(
+                    "mantaLinkGate: ${jar.name} does not link against the Manta it embeds " +
+                    "(compat_gate exit ${proc.exitValue()}). DO NOT SHIP.")
+        }
+    }
+}
+
+// Finalize the task that WRITES the jar, not `build`: `gradlew jar` alone must not slip past.
+tasks.named('jar') { finalizedBy 'mantaLinkGate' }
+// check is the pre-push condition (there is no CI), so it has to reach the gate too:
+// without this, `gradlew check` was green with no statement about whether the jar links
+// against the Manta it embeds -- the gate ran only behind assemble/build (review, 2026-09-02).
+tasks.named('check') { dependsOn 'mantaLinkGate' }
 
 // Expand ${manta_version} in mods.toml from gradle.properties, keeping the required
 // range in lockstep with the embedded Manta. ${mod_version} comes from the build's own

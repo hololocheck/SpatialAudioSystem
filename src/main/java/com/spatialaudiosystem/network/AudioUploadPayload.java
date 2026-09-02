@@ -41,9 +41,10 @@ public record AudioUploadPayload(BlockPos pos, byte[] audioData, String fileName
             var player = context.player();
 
             // Validate file size before accepting
-            String sizeError = AudioStorage.validateSize(payload.audioData);
+            net.minecraft.network.chat.Component sizeError = AudioStorage.validateSize(payload.audioData);
             if (sizeError != null) {
-                player.sendSystemMessage(Component.literal("\u00a7c" + sizeError));
+                player.sendSystemMessage(sizeError.copy()
+                        .withStyle(net.minecraft.ChatFormatting.RED));
                 SpatialAudioSystem.LOGGER.warn("Player {} tried to upload oversized audio: {} bytes",
                         player.getName().getString(), payload.audioData.length);
                 return;

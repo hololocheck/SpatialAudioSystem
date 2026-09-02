@@ -183,9 +183,14 @@ public class AudioStorage {
      * Validate audio data size before saving. Returns an error message key or null if OK.
      */
     @Nullable
-    public static String validateSize(byte[] audioData) {
+    public static net.minecraft.network.chat.Component validateSize(byte[] audioData) {
         if (audioData.length > MAX_AUDIO_SIZE) {
-            return "Audio file too large (" + (audioData.length / 1024 / 1024) + " MB). Maximum is 10 MB.";
+            // A Component, not a sentence: this is shown to a player, and the sentence form was
+            // English for everyone. The maximum comes from MAX_AUDIO_SIZE rather than a literal
+            // ten, so the message cannot go on claiming a limit the code no longer enforces.
+            return net.minecraft.network.chat.Component.translatable(
+                    "message.spatialaudiosystem.too_large",
+                    audioData.length / 1024 / 1024, MAX_AUDIO_SIZE / 1024 / 1024);
         }
         return null;
     }

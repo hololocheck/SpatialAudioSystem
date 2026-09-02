@@ -1,6 +1,8 @@
 package com.spatialaudiosystem.blockentity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.items.ItemStackHandler;
 import net.minecraft.world.level.Level;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -88,6 +90,74 @@ class PlaybackTimeoutP1Test {
 
         assertThat(device.isPlaying())
                 .as("playback past the %d tick budget must be stopped", TIMEOUT_TICKS)
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-006: an endless single medium is not stopped by the safety-net timeout")
+    void theEndlessSingleMediumOutlivesTheTimeout() {
+        PlaybackDeviceBlockEntity device = newDevice();
+        set(device, "isPlaying", true);
+        set(device, "playbackStartTick", 1_000L);
+        set(device, "normalLoop", true);
+        set(device, "playingSingle", true);
+        set(device, "loopingEntry", -1);          // no schedule entry is armed; this is the slot
+        set(device, "nextLoopArmTick", Long.MAX_VALUE);   // do not try to restart it in this test
+        ItemStackHandler slots = new ItemStackHandler(8);
+        slots.setStackInSlot(0, new ItemStack(net.minecraft.world.item.Items.PAPER));
+        set(device, "inventory", slots);
+
+        // Far past the budget: the timeout would have fired several times over.
+        PlaybackDeviceBlockEntity.tick(levelAtGameTime(200_000L), BlockPos.ZERO, null, device);
+
+        // The whole point of the endless button. Before 2026-08-30 nothing armed the single
+        // medium, so the timeout below reached it and "endless" ended at ten minutes -- with the
+        // button still lit, because a stop clears isPlaying and never the flag.
+        assertThat(device.isPlaying())
+                .as("an endless sound has no end for the timeout to be a safety net for")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-006: the endless flag alone does not exempt a stopped device")
+    void theEndlessFlagAloneDoesNotArmAnything() {
+        PlaybackDeviceBlockEntity device = newDevice();
+        set(device, "isPlaying", true);
+        set(device, "playbackStartTick", 1_000L);
+        set(device, "normalLoop", true);
+        set(device, "playingSingle", true);
+        set(device, "loopingEntry", -1);
+        // Slot empty: the button is on but there is nothing to play.
+        set(device, "inventory", new ItemStackHandler(8));
+
+        PlaybackDeviceBlockEntity.tick(levelAtGameTime(200_000L), BlockPos.ZERO, null, device);
+
+        // Without reading the slot, a device left with the button on would claim to be playing
+        // for ever and start sounding on its own at the next tick.
+        assertThat(device.isPlaying()).isFalse();
+    }
+
+    @Test
+    @DisplayName("SAS-AUDIO-006: a playlist track does not inherit the single medium's endless flag")
+    void aScheduleTrackIsNotTheEndlessSingleMedium() {
+        PlaybackDeviceBlockEntity device = newDevice();
+        set(device, "isPlaying", true);
+        set(device, "playbackStartTick", 1_000L);
+        set(device, "normalLoop", true);
+        set(device, "loopingEntry", -1);
+        // What is sounding came from the schedule, not the slot -- but the slot still holds a
+        // medium, because schedule mode bars that slot without emptying it.
+        set(device, "playingSingle", false);
+        ItemStackHandler slots = new ItemStackHandler(8);
+        slots.setStackInSlot(0, new ItemStack(net.minecraft.world.item.Items.PAPER));
+        set(device, "inventory", slots);
+
+        PlaybackDeviceBlockEntity.tick(levelAtGameTime(200_000L), BlockPos.ZERO, null, device);
+
+        // Reading only the flag and the slot would suppress the runaway timeout for every
+        // playlist track on such a device, and start the single medium by itself on restart.
+        assertThat(device.isPlaying())
+                .as("the endless button describes the single medium, not whatever is sounding")
                 .isFalse();
     }
 }

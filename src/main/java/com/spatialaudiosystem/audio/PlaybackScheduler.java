@@ -57,7 +57,12 @@ public final class PlaybackScheduler {
         // Gated on there actually being one: Play All is not disabled for an empty schedule, so
         // stopping unconditionally would make it silence a sound started from the single media
         // slot, which it never did before and which is not what "supersede" means here.
-        if (be.getLoopingEntry() >= 0) be.stopPlayback();
+        // An endless sound is superseded by stopping it -- either source: the single medium
+        // can be endless too now, and it leaves loopingEntry at -1. Keyed on the playlist arm
+        // alone, a listener who had walked out of range kept the old sound running with no
+        // server record left to stop it (review, 2026-09-02). A one-shot ends by itself and is
+        // left alone: Play All on an empty schedule must not silence the single slot.
+        if (be.isSoundingEndlessly()) be.stopPlayback();
         Seq s = new Seq(pos, level.dimension());
         s.entryIdx = 0;
         sequences.put(key(level.dimension(), pos), s);

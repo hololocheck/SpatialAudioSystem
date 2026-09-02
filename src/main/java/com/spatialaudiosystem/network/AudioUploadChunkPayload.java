@@ -99,16 +99,17 @@ public record AudioUploadChunkPayload(int chunkIndex, byte[] data)
                 SpatialAudioSystem.LOGGER.warn(
                         "Player {} sent an invalid audio chunk ({} bytes at index {}); upload dropped",
                         player.getName().getString(), payload.data.length, payload.chunkIndex);
-                player.sendSystemMessage(Component.literal("§cAudio upload failed. Please try again."));
+                player.sendSystemMessage(Component.translatable("message.spatialaudiosystem.upload_failed")
+                        .withStyle(net.minecraft.ChatFormatting.RED));
                 return;
             }
 
             if (!session.isComplete()) return;
             activeSessions.remove(player.getUUID());
 
-            String sizeError = AudioStorage.validateSize(session.buffer);
+            net.minecraft.network.chat.Component sizeError = AudioStorage.validateSize(session.buffer);
             if (sizeError != null) {
-                player.sendSystemMessage(Component.literal("§c" + sizeError));
+                player.sendSystemMessage(sizeError.copy().withStyle(net.minecraft.ChatFormatting.RED));
                 return;
             }
 

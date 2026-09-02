@@ -39,8 +39,14 @@ public record AudioUploadStartPayload(BlockPos pos, String fileName, String form
         context.enqueueWork(() -> {
             var player = context.player();
             if (payload.totalSize > AudioUploadChunkPayload.MAX_TOTAL_SIZE) {
-                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        "§cAudio file too large (" + (payload.totalSize / 1024 / 1024) + " MB). Maximum is 10 MB."));
+                // The message a client can actually provoke. Its twin in AudioStorage was
+                // translated first and is unreachable -- both callers bound the size before
+                // asking -- so translating that one alone changed nothing a player sees.
+                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                                "message.spatialaudiosystem.too_large",
+                                payload.totalSize / 1024 / 1024,
+                                AudioUploadChunkPayload.MAX_TOTAL_SIZE / 1024 / 1024)
+                        .withStyle(net.minecraft.ChatFormatting.RED));
                 return;
             }
             // An upload targets the device whose screen the sender has open, so a client
@@ -49,8 +55,9 @@ public record AudioUploadStartPayload(BlockPos pos, String fileName, String form
 
             if (!AudioUploadChunkPayload.startUpload(player.getUUID(), payload.pos,
                     payload.fileName, payload.format, payload.totalSize, payload.chunkCount)) {
-                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        "§cAudio upload rejected."));
+                player.sendSystemMessage(net.minecraft.network.chat.Component
+                        .translatable("message.spatialaudiosystem.upload_rejected")
+                        .withStyle(net.minecraft.ChatFormatting.RED));
             }
         });
     }
