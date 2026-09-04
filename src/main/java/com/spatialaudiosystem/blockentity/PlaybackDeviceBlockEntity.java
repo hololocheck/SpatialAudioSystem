@@ -4,6 +4,8 @@ import com.spatialaudiosystem.audio.AudioStorage;
 import com.spatialaudiosystem.audio.PlaybackDelivery;
 import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.audio.SpatialGain;
+import com.spatialaudiosystem.redstone.RedstoneOutputPlan;
+import com.spatialaudiosystem.redstone.RedstoneRule;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.item.RangeBoardItem;
@@ -41,8 +43,12 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     public static final int RANGE_SLOT = 1;
     public static final int SLOT_COUNT = 2;
 
-    /** Playlist ("schedule") entries: recording media played in sequence by the scheduler. */
-    public static final int PLAYLIST_SIZE = 6;
+    /**
+     * Playlist ("schedule") entries: recording media played in sequence by the scheduler.
+     * Sixteen since 1.1.0 (six before); the editor scrolls, and a device saved with the
+     * smaller playlist is widened on load (see loadAdditional).
+     */
+    public static final int PLAYLIST_SIZE = 16;
     /** Alias used by the entry-based schedule UI; entries share the playlist capacity. */
     public static final int MAX_ENTRIES = PLAYLIST_SIZE;
     public static final int MAX_PLAY_COUNT = 10;
@@ -102,6 +108,13 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     /** Entry the scheduler is currently playing, for the playing-frame highlight (-1 = none). Transient. */
     private int playingEntry = -1;
     /**
+     * The entry (1-based; 0 = the single medium) of the sound that is sounding, for the redstone
+     * events. Not playingEntry: the scheduler moves that one for the playing frame, and clears
+     * it inside the finish report's event -- before the device hears the end -- for a row
+     * preview, which made a preview's end pulse as the single medium's (review, 2026-09-03).
+     */
+    private int soundingEntry = 0;
+    /**
      * Entry this device is looping endlessly (-1 = none). Persisted, unlike {@link #playingEntry}.
      *
      * <p>"For as long as the server is up" cannot be held in a running sequence: the scheduler's
@@ -160,6 +173,30 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private boolean attenuationMode = true;
     /** Playback range without a range board, in blocks. See SpatialGain.JUKEBOX_RANGE_BLOCKS. */
     private int attenuationRange = SpatialGain.JUKEBOX_RANGE_BLOCKS;
+
+    // --- redstone output (see RedstoneRule / RedstoneOutputPlan) -------------------------
+    /** The rules, in dialog order. Persisted; the client gets them through the update tag. */
+    private final java.util.List<RedstoneRule> redstoneRules = new java.util.ArrayList<>();
+    /** The master switch in the dialog's header. Off is the state of every existing device. */
+    private boolean redstoneEnabled = false;
+    /** Server-side arithmetic over ticks; fed by playback, read every tick. Not persisted. */
+    private final RedstoneOutputPlan redstonePlan = new RedstoneOutputPlan();
+    /** What the block answers getSignal with. Moves only on the server, in refreshRedstoneOutput. */
+    private int redstoneOutput = 0;
+    /**
+     * Set by a load and cleared by the first refresh: the neighbours are told even though the
+     * level is the same zero it started at. A chunk saved mid-playback keeps its dust powered
+     * and its lamp lit in its own block states, and a refresh that only spoke on a change
+     * would leave them so forever (review, 2026-09-03).
+     */
+    private boolean redstoneNotifyPending = true;
+    /**
+     * Set by a load, cleared by the first server tick's reconcileAfterLoad. Separate from the
+     * notify flag on purpose: a finish report can force-load the chunk and run a refresh
+     * before any tick, and the first version let that refresh consume the reconcile too
+     * (review, 2026-09-03).
+     */
+    private boolean redstoneReconcilePending = false;
     /** Server tick when playback started. Used for timeout safety net. */
     private long playbackStartTick = 0;
     /** Max playback duration in ticks before auto-stop (10 minutes). */
@@ -322,6 +359,25 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         markUpdated();
     }
 
+    /**
+     * The player's toggle. When the schedule takes over, the medium still in the single-play
+     * slot goes back to the player through {@code returnMedium}: the slot is barred while the
+     * schedule owns playback, so a medium left there was stuck until the mode was turned off
+     * again. A single medium that is playing stops -- its slot is empty now.
+     */
+    public void toggleScheduleMode(java.util.function.Consumer<ItemStack> returnMedium) {
+        scheduleMode = !scheduleMode;
+        if (scheduleMode) {
+            ItemStack held = inventory.getStackInSlot(MEDIA_SLOT);
+            if (!held.isEmpty()) {
+                if (playingSingle) stopPlayback();
+                inventory.setStackInSlot(MEDIA_SLOT, ItemStack.EMPTY);
+                returnMedium.accept(held);
+            }
+        }
+        markUpdated();
+    }
+
     public int getPlayingEntry() {
         return playingEntry;
     }
@@ -337,7 +393,10 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     }
 
     public void setIsPlaying(boolean playing) {
+        // The finish report's path: a sound that reached its own end. A stop is stopPlayback.
+        boolean ended = this.isPlaying && !playing;
         this.isPlaying = playing;
+        if (ended) redstoneEvent(RedstoneOutputPlan.Event.END, soundingEntry);
         setChanged();
         if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
@@ -389,6 +448,182 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
      */
     public static boolean presetInEffect(boolean boardInserted, boolean attenuationOn) {
         return !boardInserted && attenuationOn;
+    }
+
+    public java.util.List<RedstoneRule> getRedstoneRules() {
+        return java.util.Collections.unmodifiableList(redstoneRules);
+    }
+
+    public boolean isRedstoneEnabled() {
+        return redstoneEnabled;
+    }
+
+    /** The level the block is putting on every face right now, 0..15. */
+    public int getRedstoneOutput() {
+        return redstoneOutput;
+    }
+
+    public void setRedstoneEnabled(boolean enabled) {
+        redstoneEnabled = enabled;
+        redstonePlan.setEnabled(enabled);
+        redstoneChanged();
+    }
+
+    public void toggleRedstoneEnabled() {
+        setRedstoneEnabled(!redstoneEnabled);
+    }
+
+    /** Appends a default rule; false when the dialog's rows are all taken. */
+    public boolean addRedstoneRule() {
+        if (redstoneRules.size() >= RedstoneRule.MAX_RULES) return false;
+        redstoneRules.add(RedstoneRule.defaults());
+        redstoneChanged();
+        return true;
+    }
+
+    public void removeRedstoneRule(int index) {
+        if (index < 0 || index >= redstoneRules.size()) return;
+        redstoneRules.remove(index);
+        redstoneChanged();
+    }
+
+    /** One wheel notch on the trigger, wrapping (R4.13.0.8). */
+    public void cycleRedstoneTrigger(int index, int delta) {
+        editRedstoneRule(index, r -> r.withTrigger(r.trigger().cycle(Integer.signum(delta))));
+    }
+
+    public void adjustRedstoneStrength(int index, int delta) {
+        editRedstoneRule(index, r -> r.withStrength(r.strength() + Integer.signum(delta)));
+    }
+
+    /** One wheel notch of delay is half a second. */
+    public void adjustRedstoneDelay(int index, int delta) {
+        editRedstoneRule(index, r -> r.withDelay(
+                r.delayTicks() + Integer.signum(delta) * RedstoneRule.DELAY_STEP_TICKS));
+    }
+
+    /** One wheel notch of pulse length is a tenth of a second. */
+    public void adjustRedstoneLength(int index, int delta) {
+        editRedstoneRule(index, r -> r.withLength(
+                r.lengthTicks() + Integer.signum(delta) * RedstoneRule.LENGTH_STEP_TICKS));
+    }
+
+    /** The entry scope wraps: past the last entry comes "any", and before "any" the last entry. */
+    public void adjustRedstoneEntry(int index, int delta) {
+        editRedstoneRule(index, r -> r.cycleEntry(delta));
+    }
+
+    /**
+     * Swaps a rule with its neighbour in the direction of {@code delta}; at either end, or
+     * past the list, nothing moves. The order is the list's own -- the output is the
+     * strongest active rule whichever comes first -- so this is for reading, like the
+     * schedule's arrows.
+     */
+    public void moveRedstoneRule(int index, int delta) {
+        int to = index + Integer.signum(delta);
+        if (index < 0 || index >= redstoneRules.size() || to < 0 || to >= redstoneRules.size() || to == index) return;
+        java.util.Collections.swap(redstoneRules, index, to);
+        redstoneChanged();
+    }
+
+    private void editRedstoneRule(int index, java.util.function.UnaryOperator<RedstoneRule> edit) {
+        if (index < 0 || index >= redstoneRules.size()) return;
+        redstoneRules.set(index, edit.apply(redstoneRules.get(index)));
+        redstoneChanged();
+    }
+
+    /** Every rule edit: the plan gets the new set, the disk and the clients get told. */
+    private void redstoneChanged() {
+        redstonePlan.setRules(redstoneRules);
+        setChanged();
+        if (level != null && !level.isClientSide()) {
+            level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
+            refreshRedstoneOutput();
+        }
+    }
+
+    /** Feeds the plan one playback event at the current server tick. */
+    /** @param entry the schedule entry (1-based) the event is about; 0 for the single medium. */
+    private void redstoneEvent(RedstoneOutputPlan.Event event, int entry) {
+        if (level == null || level.isClientSide()) return;
+        redstonePlan.onEvent(event, level.getGameTime(), entry);
+        refreshRedstoneOutput();
+    }
+
+    /**
+     * The first server tick after a load. The load itself already resumed the plan from the
+     * saved playing state (see loadRedstone), which is right when the sound outlived a chunk
+     * reload -- the registry still holds it, the loop branch never re-arms, and an end can
+     * even be reported into the device before its first tick. What the load cannot tell is
+     * whether the sound survived at all: after a server restart the registry is empty and
+     * the saved flag is stale. That is decided here, once, and the stale flag is cleared
+     * without a pulse: the plan is reset first, so the stop is not a transition. It used to
+     * be cleared by the timeout on the first tick, because the start tick was not saved.
+     * Loops are left to the loop branch, which re-arms them.
+     */
+    void reconcileAfterLoad(ServerLevel sl) {
+        redstoneReconcilePending = false;
+        if (!isPlaying) return;
+        boolean sounding = PlaybackSessionRegistry.currentId(sl, worldPosition) != PlaybackSessionRegistry.NO_PLAYBACK;
+        if (sounding) return;
+        // Nothing is sounding, so the provisional playing state the load took on is dropped
+        // for every device: an armed loop lights its lamp again when the loop branch re-arms
+        // it (a start), and one whose audio is gone stays dark instead of lit forever.
+        redstonePlan.reset();
+        if (!isLoopArmed() && !isNormalLoopArmed()) {
+            stopPlayback();
+        }
+    }
+
+    /**
+     * Recomputes the level for this tick and, when it moved, tells the neighbours to look
+     * again. Called every server tick and after every event and edit, so a change is never
+     * more than a tick late and a steady level costs nothing but the comparison.
+     */
+    void refreshRedstoneOutput() {
+        if (level == null || level.isClientSide()) return;
+        // Always through the plan, disabled included: that is where its pulses are pruned.
+        int now = redstonePlan.levelAt(level.getGameTime());
+        if (now != redstoneOutput || redstoneNotifyPending) {
+            redstoneOutput = now;
+            redstoneNotifyPending = false;
+            level.updateNeighborsAt(worldPosition, getBlockState().getBlock());
+        }
+    }
+
+    private void saveRedstone(CompoundTag tag) {
+        tag.putBoolean("redstoneEnabled", redstoneEnabled);
+        net.minecraft.nbt.ListTag rules = new net.minecraft.nbt.ListTag();
+        for (RedstoneRule r : redstoneRules) rules.add(r.save());
+        tag.put("redstoneRules", rules);
+    }
+
+    /** Disk and update tag alike. The plan starts over: pulses in flight do not survive a reload. */
+    private void loadRedstone(CompoundTag tag) {
+        redstoneEnabled = tag.getBoolean("redstoneEnabled");
+        redstoneRules.clear();
+        for (net.minecraft.nbt.Tag t : tag.getList("redstoneRules", net.minecraft.nbt.Tag.TAG_COMPOUND)) {
+            if (redstoneRules.size() >= RedstoneRule.MAX_RULES) break;
+            redstoneRules.add(RedstoneRule.load((CompoundTag) t));
+        }
+        redstonePlan.setRules(redstoneRules);
+        redstonePlan.setEnabled(redstoneEnabled);
+        redstonePlan.reset();
+        // A device saved as playing is taken at its word, from its saved start tick, until
+        // the first tick's reconcile learns otherwise. Resumed rather than started: no pulse
+        // fires and a delayed lamp does not re-run its delay. Read from the tag, not from the
+        // fields: loadAdditional restores isPlaying after this runs, and the first version
+        // read the field -- false on every fresh load -- so the resume never fired in
+        // production while every test, which set the field first, stayed green (review,
+        // 2026-09-03).
+        // The sounding entry rides the same tag: without it the first end or stop after a
+        // reload would be reported as the single medium's, and a rule scoped to the entry that
+        // is actually sounding would miss it (review, 2026-09-03).
+        soundingEntry = tag.getInt("soundingEntry");
+        if (tag.getBoolean("isPlaying")) redstonePlan.resume(tag.getLong("playbackStartTick"), soundingEntry);
+        redstoneOutput = 0;
+        redstoneNotifyPending = true;
+        redstoneReconcilePending = true;
     }
 
     /** The playback range's bounds, applied on every way in: the screen, the wire and disk. */
@@ -460,6 +695,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
                         PlaybackSessionRegistry.end(sl, getBlockPos());
                         isPlaying = false;
                         playingSingle = false;
+                        redstoneEvent(RedstoneOutputPlan.Event.STOP, soundingEntry);
                         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(
                                 new belugalab.sas.api.PlaybackEndedEvent(sl, getBlockPos()));
                     }
@@ -483,6 +719,14 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
      *             depend on a completion report that stops arriving when nobody is online.
      */
     public boolean playMedia(ItemStack mediaStack, boolean loop) {
+        return playMedia(mediaStack, loop, -1);
+    }
+
+    /**
+     * @param entry the playlist index this medium is, or -1 for the single medium. Only the
+     *              redstone rules read it: a rule scoped to an entry fires for that entry alone.
+     */
+    public boolean playMedia(ItemStack mediaStack, boolean loop, int entry) {
         if (!RecordingMediumItem.hasAudioData(mediaStack) || level == null) return false;
         if (!(level instanceof ServerLevel sl)) return false;
 
@@ -511,6 +755,12 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         if (playbackId == PlaybackSessionRegistry.NO_PLAYBACK) return false;
 
         isPlaying = true;
+        // The start owns the index the later stop and end report under. Left to the callers,
+        // a single medium started after a row's preview kept the preview's index, and its
+        // end pulsed the rules scoped to that entry (review, 2026-09-03).
+        playingEntry = entry;
+        soundingEntry = entry + 1;
+        redstoneEvent(RedstoneOutputPlan.Event.START, soundingEntry);
         // Cleared here rather than at each other call site: this is the one path every start
         // runs through, so a new caller cannot forget to say it is not the single medium.
         playingSingle = false;
@@ -597,11 +847,16 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     }
 
     public void stopPlayback() {
+        boolean wasPlaying = isPlaying;
         isPlaying = false;
         playingSingle = false;
         // Every stop path runs through here, so this is the one place that has to disarm the
         // loop. Leaving it armed would have tick() start the sound again a second later.
         loopingEntry = -1;
+        if (wasPlaying) redstoneEvent(RedstoneOutputPlan.Event.STOP, soundingEntry);
+        // Nothing plays now, so nothing is the playing entry: a later end report cannot be
+        // attributed to it, and the client's playing frame goes away with the sound.
+        playingEntry = -1;
         setChanged();
         if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
@@ -631,6 +886,12 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
 
     public static void tick(Level level, BlockPos pos, BlockState state, PlaybackDeviceBlockEntity entity) {
         if (level.isClientSide()) return;
+        // First, before the loop branch returns early: a delayed rule or a pulse's end must
+        // reach the wire whether or not the device is armed.
+        if (entity.redstoneReconcilePending && level instanceof ServerLevel afterLoad) {
+            entity.reconcileAfterLoad(afterLoad);
+        }
+        entity.refreshRedstoneOutput();
 
         if (entity.isLoopArmed() || entity.isNormalLoopArmed()) {
             // Only the loop branch needs the server level; the timeout below does not, and
@@ -680,7 +941,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         }
         // A failure here is left armed on purpose: the entry still names media, so the cause is
         // storage rather than the schedule, and the retry interval keeps that from being costly.
-        if (playMedia(media, true)) {
+        if (playMedia(media, true, loopingEntry)) {
             setPlayingEntry(loopingEntry);
             // The point of the whole arm-and-restore mechanism, said positively: "no error after
             // a restart" is indistinguishable from "the loop never came back".
@@ -699,6 +960,12 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         tag.putInt("loopingEntry", loopingEntry);   // survives restart: tick() restores the sound
         tag.putBoolean("scheduleMode", scheduleMode);
         tag.putBoolean("normalLoop", normalLoop);
+        // Persisted since 2026-09-03: without it a chunk reload read the start as tick 0 and
+        // the timeout stopped a playing one-shot on the first tick back, which also fed the
+        // redstone plan a stop that never happened.
+        tag.putLong("playbackStartTick", playbackStartTick);
+        tag.putInt("soundingEntry", soundingEntry);
+        saveRedstone(tag);
         tag.putBoolean("playingSingle", playingSingle);
         tag.putBoolean("showRange", showRange);
         tag.putBoolean("isPlaying", isPlaying);
@@ -730,6 +997,13 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         }
     }
 
+    /** Slot by slot into a handler whose size is fixed; extra saved slots are dropped, missing ones emptied. */
+    static void copyPlaylist(ItemStackHandler from, ItemStackHandler into) {
+        for (int i = 0; i < into.getSlots(); i++) {
+            into.setStackInSlot(i, i < from.getSlots() ? from.getStackInSlot(i) : ItemStack.EMPTY);
+        }
+    }
+
     private void loadEntryCount(CompoundTag tag) {
         if (tag.contains("entryCount")) {
             entryCount = Math.max(0, Math.min(MAX_ENTRIES, tag.getInt("entryCount")));
@@ -747,11 +1021,20 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         inventory.deserializeNBT(registries, tag.getCompound("inventory"));
-        if (tag.contains("playlist")) playlist.deserializeNBT(registries, tag.getCompound("playlist"));
+        if (tag.contains("playlist")) {
+            // deserializeNBT resizes the handler to the saved "Size": a device saved with the
+            // six-entry playlist would come back with six slots and every add past them
+            // would throw. Read into a scratch handler and copy, so the capacity is ours.
+            ItemStackHandler saved = new ItemStackHandler(PLAYLIST_SIZE);
+            saved.deserializeNBT(registries, tag.getCompound("playlist"));
+            copyPlaylist(saved, playlist);
+        }
         loadPlayCounts(tag);
         loadEntryCount(tag);
         scheduleMode = tag.getBoolean("scheduleMode");
         normalLoop = tag.getBoolean("normalLoop");
+        playbackStartTick = tag.getLong("playbackStartTick");
+        loadRedstone(tag);
         playingSingle = tag.getBoolean("playingSingle");
         loopingEntry = tag.contains("loopingEntry")
                 ? Math.max(-1, Math.min(MAX_ENTRIES - 1, tag.getInt("loopingEntry")))
@@ -818,6 +1101,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         tag.putInt("entryCount", entryCount);
         tag.putBoolean("scheduleMode", scheduleMode);     // client: ✕ lock + button arming
         tag.putBoolean("normalLoop", normalLoop);        // client: the endless button
+        saveRedstone(tag);                                // client: the redstone dialog
         tag.putInt("playingEntry", playingEntry);         // client: playing-frame highlight
         if (ownerUUID != null) tag.putUUID("OwnerUUID", ownerUUID);   // client: owner face
         tag.putBoolean("PrivateMode", privateMode);                   // client: ring colour

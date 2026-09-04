@@ -6,8 +6,9 @@
 
 ### Changed
 
-- **Manta 2.0.0** (embedded Manta updated to 2.0.0, required range `[2.0.0,3)`).
+- **Manta 2.2.2** (embedded Manta updated to 2.2.2, required range `[2.2.2,3)`; 2.2.0 draws UI text with Manta's own raster at the on-screen pixel size on whole pixels, and includes 2.1.2's bold fix).
   Update the other BelugaLab mods (TSU 1.1.0 / ASC 1.2.0) at the same time: a build that embeds Manta 1.x requires `[1.1.74,2)`, and the two required ranges cannot both be satisfied by one Manta.
+  Since Manta 2.1, on Windows the UI text is drawn with the system's own fonts (Yu Gothic, Microsoft YaHei, Segoe UI and others; nothing is redistributed) and stays sharp when scaled. `/manta font off` returns to the previous font.
 
 ### Added
 
@@ -20,6 +21,14 @@
   Toggling it while playing takes effect on the sound that is playing: OFF lets each listener finish the current pass, ON restarts it as endless.
 - The schedule ON/OFF toggle moved into the schedule screen's button row (the main-screen toggle is gone).
 - The range-board slot, attenuation, range display and schedule button now share one row.
+- **Redstone output**: the red redstone button on the device screen opens up to sixteen rules tying redstone to playback.
+  "While playing" outputs for as long as the device plays (a lamp), "On start / On stop / On end" pulse after a delay.
+  Power (1-15), delay (0.5 s steps, up to 30 s) and pulse length (0.1 s steps, up to 5 s) are all set by wheel. Overlapping rules output the strongest, as weak power on every face (dust, lamps and repeaters touching the device; not through solid blocks).
+  A rule's "Entry" narrows it to one schedule entry (#1-#16); "Any" reacts to whatever plays, the single medium included.
+- **Sixteen schedule entries** (six before). The schedule and redstone screens show six rows at a time; the wheel and a scrollbar move through the rest.
+  Each row's × became a **stop** button; deleting an entry moved to the **trash can** right of its media slot (the medium comes back to you).
+- Turning the schedule on hands the medium left in the single-play slot back to your inventory (or drops it at your feet when it does not fit).
+  The default is no rules and output off, so existing devices are unchanged. The device's own output feeding back through adjacent dust does not restart playback.
 - **Playback range preset**: without a range board, hover the "Playback range" row on the device screen and scroll to set 1-64 blocks.
   A newly placed device starts at 64 blocks (the jukebox's range); existing devices keep their saved value.
   While a board is inserted its range applies and the row reads "set by the range board". A change takes effect from the next start.

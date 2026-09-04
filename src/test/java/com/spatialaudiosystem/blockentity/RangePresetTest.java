@@ -27,7 +27,7 @@ class RangePresetTest {
 
     /** A device with no world behind it; the range setter touches nothing but its own field. */
     private static PlaybackDeviceBlockEntity device() {
-        return new ObjenesisStd().newInstance(PlaybackDeviceBlockEntity.class);
+        return com.spatialaudiosystem.blockentity.TestDevices.newBare();
     }
 
     @Test

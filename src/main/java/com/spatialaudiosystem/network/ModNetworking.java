@@ -92,6 +92,11 @@ public class ModNetworking {
         );
 
         registrar.playToServer(
+                RedstoneRuleCommandPayload.TYPE,
+                RedstoneRuleCommandPayload.STREAM_CODEC,
+                RedstoneRuleCommandPayload::handle
+        );
+        registrar.playToServer(
                 SetRangeBoardDataPayload.TYPE,
                 SetRangeBoardDataPayload.STREAM_CODEC,
                 SetRangeBoardDataPayload::handle

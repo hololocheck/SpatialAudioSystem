@@ -1,6 +1,6 @@
 # SAS 新機能 仕様 — 範囲プリセット / サウンドハンディ / レッドストーン出力
 
-**版: v1.1**（2026-09-02 起草、同日改訂）。元: `notes/SAS新機能追加。.txt`（ユーザー原文、2026-09-02）。
+**版: v1.8**（2026-09-02 起草、09-03 改訂）。元: `notes/SAS新機能追加。.txt`（ユーザー原文、2026-09-02）。
 規約: `manta/notes/BELUGAEXPERIENCE_RULES.md` v2.5 に従う（数値はホイール R4.13.0、boolean は
 `ToggleSwitchController` R4.14.0、Item は tool_mode + Alt/Ctrl/Shift ホイール R3.2.x、中ボタン処理後は
 `setCanceled` R3.5、HUD は `HudChrome` / `HudAnimState` / `HudConstants`、Screen は `JsonLayoutPlainScreen` /
@@ -98,9 +98,12 @@
 
 **意図**: 再生状態を外部機械へ伝える。ランプ点灯（レベル出力）とパルス、強度と遅延を UI で設定。
 
-- ブロック: `isSignalSource = true`、`getSignal`/`getDirectSignal` = BE の現在出力（0〜15）を**全面に**出す。
-  出力値が変わった tick で `updateNeighborsAt`。入力（既存の立ち上がり再生）はそのまま。
-  ※同じ回路に入力と出力を繋ぐと自己再生になり得る（v1 では仕様として注記、面の選択は v2 候補）。
+- ブロック: `isSignalSource = true`、`getSignal` = BE の現在出力（0〜15）を**全面に弱い信号**として出す
+  （コンパレータと同じ。固体ブロックを通した強い伝導はしない — 強い信号は隣の隣まで更新する義務があり、
+  装置は自分の隣しか更新しないため。v1.3 で `getDirectSignal` を撤去）。出力値が変わった tick と**ロード直後の
+  最初の tick**で `updateNeighborsAt`（ロード時は値が 0 のままでも一度通知 — 再生中に保存されたチャンクは
+  ダストとランプが点いたまま戻ってくるため）。入力（立ち上がり再生）は POWERED を常に追従させた上で、
+  **装置が出力中の立ち上がりだけ無視**（自分の出力がダスト経由で戻る自己再生の防止。出力中はレバーも効かない）。
 - **ルール（最大 6 本、BE に永続化）**: `{trigger: PLAYING | START | STOP | END, mode: LEVEL | PULSE,
   strength 1〜15, delayTicks 0〜600, pulseTicks 2〜100}`。
   - `PLAYING` + `LEVEL`: 再生中は strength を出し、停止・終了で 0（それぞれ delay 後に反映）。
@@ -113,6 +116,84 @@
   — すべて値 div のホイール）、追加 / 削除（`plus` / `trash-2`）。`RedstoneRuleCommandPayload(pos, op, index, field, delta)`
   を decode で範囲検証。
 - 既定: ルール無し（出力 0）= 既存ワールドの挙動不変。
+- **実装（v1.2）**: `RedstoneRule`（record、trigger は PLAYING / START / STOP / END。PLAYING はレベル、他はパルス。
+  mode は trigger に含意されるので別項目にしない）+ `RedstoneOutputPlan`（tick 演算、MC 非依存、非永続）。
+  事象は `playMedia` 成功 = START、`stopPlayback`（再生中のみ）と ∞ OFF の撤回 = STOP、終了報告の
+  `setIsPlaying(false)` = END。出力は BE の `refreshRedstoneOutput()` が毎 tick と各事象・編集の直後に再計算し、
+  変化したときだけ `updateNeighborsAt`。**入力の自己再生防止**: 装置の出力が 0 より大きい間は `neighborChanged` の
+  入力を読まない（自分の出力が隣のダストを通って戻る場合の再始動を防ぐ）。
+  遅延つきレベル: 開始から delay 後に ON、停止・終了から delay 後に OFF。delay より短い音はランプを点けない。
+  **連続性（v1.3）**: 停止/終了から 1 tick 以内の開始（スケジュールの次曲、supersede）は継続扱いで、遅延つきの
+  ランプは消えない。ロード後にまだ開始を見ていない停止/終了はパルスを出さない（保存中再生の timeout 停止対策）。
+  出力 OFF 中は事象を溜めない。再生中の 1 回再生を Play All が置き換える場合は「開始」であり「停止」ではない。
+  **チャンク再ロード（v1.6）**: ロード時（`loadRedstone`）に保存された `isPlaying` が真なら plan を**永続化した開始
+  tick から再開**（START 事象ではない — パルスは出ない、遅延つきランプは遅延をやり直さない）。終了報告がチャンクを
+  強制ロードして最初の tick より前に END を届けても、これで END パルスが出る。ロード後最初の tick の
+  `reconcileAfterLoad` は「音が生き残ったか」だけを決める: 登録簿に無ければ（サーバー再起動）保存された
+  `isPlaying` は古い: 全装置で plan を reset（仮の playing を捨てる）し、ループ未装備なら `stopPlayback`（パルス無し。
+  ループ装備は loop 分岐が再張りしたときの START で再点灯。音源が消えたループは点きっぱなしにならない）。
+  通知用と reconcile 用のフラグは別。**ロード時の再開は tag から読む**（`loadAdditional` は `isPlaying` を
+  `loadRedstone` の後で復元するため、フィールドを読むと本番では一度も再開しない — v1.7）。
+  `playbackStartTick` を永続化（再ロード直後の timeout 誤停止と、それに伴う偽の STOP を防ぐ）。
+
+## 3.5 スケジュール / レッドストーン UI の改修（Phase 2.5、v1.8）
+
+Phase 2 の実機評価（「おおむね OK。開始時、停止時、再生中で問題なし。遅延長さも問題なし」）に続くユーザー指示
+（2026-09-03）を反映する。
+
+- **16 件**: `PLAYLIST_SIZE` / `MAX_ENTRIES` と `RedstoneRule.MAX_RULES` を 6 → 16。両ダイアログは
+  `ScrollViewport(total, 6)` で 6 行を窓表示し（A4.19: 行 = repeat index + offset、ダイアログ root の `wheelKey`
+  がリスト領域内のホイールをスクロールに使う — 行内の値セルのホイールは engine が先に拾う）、右端にスクロールバー
+  （track 6 px / thumb 20 px、`visibleKey` で必要なときだけ）。追加でリストが伸びたら末尾へスクロール、
+  削除で縮んだら clamp。スケジュールのスロット（menu slot）も窓内の行だけ配置し、窓外は画面外へ。
+  6 スロットで保存された playlist は `ItemStackHandler.deserializeNBT` が **保存時のサイズに縮める** ため、
+  一時 handler に読んでから固定 16 の handler へ写す（`copyPlaylist`）。
+- **スケジュール行**: `▶`（試聴）の隣の × を **停止**（`manta:square`、装置の再生を止める = ヘッダの停止と同じ）に。
+  **ゴミ箱**（`manta:trash-2`、エントリ削除 + 媒体返却）を媒体スロットの右へ。連続再生の隣の停止は残す。
+  行幅 220 → 214（スクロールバー分）、媒体スロット枠 x 192 → 170。
+- **スケジュール ON で媒体を返す**: `toggleScheduleMode(Consumer<ItemStack>)`。ON 遷移時に通常スロットの媒体を
+  取り出してプレイヤーへ（インベントリに入らなければ足元へ drop）。単体再生中ならその再生を止める（スロットが
+  空になるので）。OFF 遷移と空スロットでは何もしない。
+- **エントリごとのレッドストーン条件**: `RedstoneRule.entry`（0 = 全体 / 1〜16 = そのエントリ。行の 2 行目
+  「対象」セル、ホイールで 全体 → #1 … #16 → 全体 と巡回）。事象は entry を運ぶ（`playMedia(stack, loop, entry)`、
+  STOP/END は `playingEntry + 1`。スケジューラは `stop()` で **stopPlayback を setPlayingEntry(-1) の前**に呼ぶ）。
+  plan は「いま鳴っている entry と、その開始 tick」「直前の entry と、その開始・終了 tick」を持ち、
+  対象つきランプは自分の entry の開始・終了から遅延を測る。同じ entry が 1 tick 以内に再開（再生回数）した場合は
+  開始 tick を引き継ぐ（遅延つきランプが瞬断しない）。ロード時の `resume` は entry を知らない（ディスクに無い）ので
+  対象つきランプは次の開始まで暗い。単体再生は entry 0 = 「全体」の規則だけに一致（対象 #k はスケジュール再生
+  のときだけ意味を持つ — スケジュール OFF のとき対象セルはグレー表示、値は保持）。
+  旧セーブ（entry キー無し）は 0 = 全体として読む。
+- **赤**: レッドストーン設定ダイアログの縁・タイトル・区切り・追加ボタン・スクロールバーはパレットの赤 `#ef5350`。
+  **BelugaExperience R4.3.2（ダイアログ縁 3 色）の例外**（ユーザー指示 2026-09-03、JSON 生成側と本節に明記）。
+  装置画面の稲妻ボタンは赤い枠の div + canvas（`pb-redstone-icon`）になり、`SvgIcon.draw` で自前の
+  レッドストーン結晶 SVG（4 芒星 + 濃い芯）を描く（Manta の icon registry は触らない = Manta 再ビルド不要）。
+  列ヘッダは「条件 / 強度 / 遅延 / 長さ」、行は 2 段（1 段目に 4 値 + ゴミ箱、2 段目に「対象」）で
+  スケジュールダイアログと同じ 35 px ピッチ。
+- **二次読み 1 巡目の反映（v1.8 内）**: (1) engine は canvas ノードを self-clickable にするので、ボタン内の canvas は
+  自分の class でクリックが届く → `onElementClick` に `pb-redstone-icon` の case（gate: clickable 祖先の下の canvas は
+  必ず case を持つ。`owner-face-canvas` は Manta の `OwnerAccess.isFaceClick` が処理）。(2) lang の `%d` を全部 `%s` に。
+  表示は元から壊れていない（`Language` がロード時に `%d` / `%f` を `%s` に正規化する — Vault
+  `Knowledge/translatable-lang-percent-specifier.md`、2026-08-26 に TSU が同じ誤診を経て確認済み）ので、これは
+  ファイルと実行時意味を 1:1 にするハイジーン。gate（2 locale に `%s` / `%%` 以外の指定子が無い）が本当に拾うのは
+  正規化を通り抜けて生テンプレート表示になる `%x` `%b` `%c` の類。(3) `playingEntry` は **開始が権威**（`playMedia` 成功時に
+  entry を書く、単体は −1）、`stopPlayback` で −1 に戻す — 行の試聴の後に単体再生を始めても、その終了が試聴した
+  entry の END として報告されない。
+- **二次読み 2 巡目の反映（v1.8 内）**: レッドストーン事象の entry は `playingEntry` ではなく **`soundingEntry`**
+  （1-based、0 = 単体。`playMedia` 成功時に BE 自身が書く）を使う。理由: `PlaybackFinishedPayload` は
+  `PlaybackEndedEvent` を `setIsPlaying(false)` より先に post し、行の試聴ではスケジューラがその event の中で
+  `setPlayingEntry(-1)` するため、`playingEntry` を使うと試聴の END が「全体」で報告される（対象 #k の終了規則が
+  試聴で鳴らない）。`playingEntry` は枠表示用に残し、スケジューラが自由に動かしてよい。
+- **実機評価 2 回目の反映（v1.8 内、2026-09-03 夜）**: 値セルは h 13（枠付きの文字箱は 9 + 2×(border+1) 以上）、
+  レッドストーン行に ▲▼（`OP_MOVE`、隣と swap）、英語の条件名は "Playing" 等の短い語（列見出しが文脈）、追加ボタンは
+  `btn_add_entry` を共用、装置画面のレッドストーンボタンは canvas 1 ノード（hover は canvas 自身に出る）。gate:
+  `englishValuesCarryNoJapanese`（半角カナ含む）と `staticLabelsFitTheirBoxes`（全 layout の `translatableKey` ノードと、
+  値セル（条件 / 対象 / 強度 / 遅延 / 長さ / 再生回数 / 範囲行の合成値）の既知の最大値を vanilla `ascii.png` の幅で測る。
+  実機フォント（Manta 2.1 のシステムフォント）は可変幅で更に狭いので、これは上限側の検査）。
+- **二次読み 3 巡目の反映（v1.8 内）**: `soundingEntry` を **NBT に保存**し（`playbackStartTick` と同じ tag）、
+  `loadRedstone` が読んで `redstonePlan.resume(startTick, soundingEntry)` で再開する。これで §3 の「終了報告がチャンクを
+  強制ロードして最初の tick より前に END を届けても END パルスが出る」は**対象つき規則でも**成り立ち、対象つきランプは
+  保存した entry で再点灯する（本節前段の「対象つきランプは次の開始まで暗い」は **entry が保存されていない旧セーブ /
+  単体再生のときだけ**）。
 
 ## 4. 検証
 
@@ -133,6 +214,19 @@
 
 ## 変更履歴
 
+- v1.8（2026-09-03）: Phase 2.5（§3.5）— 16 件 + スクロール、行の停止ボタンとゴミ箱、スケジュール ON での媒体返却、
+  ルールの「対象」（エントリ範囲）、赤い縁と自前のレッドストーン SVG（R4.3.2 の例外を明記）。
+- v1.7（2026-09-03）: ロード時の再開が本番で一度も動かなかった（フィールド順）→ tag から読む。ループ装備の古い
+  フラグも仮の playing は捨てる。
+- v1.6（2026-09-03）: 再開はロード時に行い（終了報告による強制ロードでも END パルスが落ちない）、最初の tick は
+  古いフラグの片付けだけ（パルス無し）。tick 配線を実行するテストを追加。
+- v1.5（2026-09-03）: 再ロードの再開は START 事象ではなく `resume(開始 tick)`（パルス再発火と遅延やり直しを防ぐ）。
+  サーバー再起動後の古い `isPlaying` は最初の tick で片付ける。
+- v1.4（2026-09-03）: 二次読み 2 巡目 — 再ロードで生き残った音の再点灯、`playbackStartTick` の永続化、
+  再生中の開始は継続（負の対照を追加）。
+- v1.3（2026-09-03）: 二次読み 8 件を反映 — 弱い信号のみ、ロード直後の通知、POWERED 追従後の自己再生ガード、
+  1 tick 以内の再開は継続、開始なしの停止はパルス無し、OFF 中は溜めない。
+- v1.2（2026-09-03）: Phase 2 の実装内容を §3 に追記（trigger に mode を含意、事象の対応表、自己再生防止）。
 - v1.1（2026-09-02）: 二次読みの所見で §0 の「ボード有りではプリセット不使用」を訂正し、面距離の穴埋め規則を
   「箱の有無」に変更。減衰 OFF の半径化を撤回（既存ワールドと TSU への影響）。
 - v1（2026-09-02）: 起草。実装の現状（§0）を読んだ上で 3 機能を分解、未確定 4 点を §5 に明示。

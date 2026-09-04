@@ -62,6 +62,22 @@ public final class SasScreenHints {
         HintRegistry.register("pb-file", "sas.hint.pb_file", WIKI_PLAYBACK);
         HintRegistry.register("pb-format", "sas.hint.pb_format", WIKI_PLAYBACK);
         HintRegistry.register("pb-atten-range", "sas.hint.pb_atten_range", WIKI_RANGE);
+        HintRegistry.register("pb-redstone-btn", "sas.hint.pb_redstone_btn", WIKI_PLAYBACK);
+        // The redstone dialog.
+        HintRegistry.register("pb-rs-enabled-label", "sas.hint.pb_rs_enabled", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-enabled-track", "sas.hint.pb_rs_enabled", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-enabled-knob", "sas.hint.pb_rs_enabled", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-add-btn", "sas.hint.pb_rs_add", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-trigger", "sas.hint.pb_rs_trigger", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-strength", "sas.hint.pb_rs_strength", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-delay", "sas.hint.pb_rs_delay", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-length", "sas.hint.pb_rs_length", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-entry", "sas.hint.pb_rs_entry", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-entry-label", "sas.hint.pb_rs_entry", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-up-btn", "sas.hint.pb_rs_up", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-down-btn", "sas.hint.pb_rs_down", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-del-btn", "sas.hint.pb_rs_del", WIKI_PLAYBACK);
+        HintRegistry.register("pb-rs-close", "sas.hint.close", WIKI_PLAYBACK);
         HintRegistry.register("pb-play-btn", "sas.hint.pb_play", WIKI_PLAYBACK);
         HintRegistry.register("pb-stop-btn", "sas.hint.pb_stop", WIKI_PLAYBACK);
         HintRegistry.register("pb-loop-btn", "sas.hint.pb_loop", WIKI_PLAYBACK);
@@ -90,6 +106,7 @@ public final class SasScreenHints {
         HintRegistry.register("pb-entry-up-btn", "sas.hint.entry_up", WIKI_SCHEDULE);
         HintRegistry.register("pb-entry-down-btn", "sas.hint.entry_down", WIKI_SCHEDULE);
         HintRegistry.register("pb-entry-test-btn", "sas.hint.entry_test", WIKI_SCHEDULE);
+        HintRegistry.register("pb-entry-stop-btn", "sas.hint.entry_stop", WIKI_SCHEDULE);
         HintRegistry.register("pb-entry-del-btn", "sas.hint.entry_del", WIKI_SCHEDULE);
         HintRegistry.register("pb-media-slot-frame", "sas.hint.entry_slot", WIKI_SCHEDULE);
         HintRegistry.register("pb-media-info", "sas.hint.media_info", WIKI_SCHEDULE);

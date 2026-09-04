@@ -43,8 +43,15 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     private static final int FILE_MAX_W = 190;
     private static final int ROW_STRIDE = 35;      // matches playback-schedule.json
     private static final int FIRST_ROW_Y = 52;     // first entry row Y in the overlay
-    private static final int SLOT_ROW_X = 193;     // media-slot-frame x(192) + 1
+    private static final int SLOT_ROW_X = 171;     // media-slot-frame x(170) + 1
     private static final int SLOT_ROW_Y = 56;      // media-slot-frame y(55) + 1
+    /** Rows on screen at once, in both dialogs; the rest scroll (16 entries, 16 rules). */
+    private static final int VISIBLE_ROWS = 6;
+    private static final int LIST_Y = 50;          // playback-schedule.json pb-list-bg
+    private static final int LIST_H = 212;
+    private static final int RS_LIST_Y = 56;       // playback-redstone.json pb-rs-list-bg
+    private static final int RS_LIST_H = 208;
+    private static final int THUMB_H = 20;         // scrollbar-thumb h in both layouts
     private static final long OPEN_ANIM_NS = 220_000_000L;
     private static final int PLAYING_HL_BG = 0x224FC3F7;
     private static final int PLAYING_HL_BORDER = 0xFF4FC3F7;
@@ -72,7 +79,19 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     private boolean attenuationOn;
     private boolean rangeVisible;
     private boolean showSchedule = false;
+    /** The redstone dialog. One overlay at a time: opening either closes the other. */
+    private boolean showRedstone = false;
     private long scheduleOpenedAtNanos = 0L;
+    // A4.19: the viewport owns the offset; rows resolve as repeat index + offset.
+    private final com.manta.api.controller.ScrollViewport scheduleScroll =
+            new com.manta.api.controller.ScrollViewport(() -> be().getEntryCount(), VISIBLE_ROWS)
+                    .activeWhen(() -> showSchedule);
+    private final com.manta.api.controller.ScrollViewport redstoneScroll =
+            new com.manta.api.controller.ScrollViewport(() -> be().getRedstoneRules().size(), VISIBLE_ROWS)
+                    .activeWhen(() -> showRedstone);
+    // A list that grew scrolls to its new last row, so an add past the window is seen.
+    private int lastEntryCount = -1;
+    private int lastRuleCount = -1;
 
     private final ToggleSwitchController attenuationToggle = new ToggleSwitchController(
             "pb-atten-track", "pb-atten-knob",
@@ -103,6 +122,15 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
      * the schedule owns playback, which is what bars the single media slot. Keeping media in a
      * schedule you are not currently playing is a reasonable thing to want.
      */
+    private final ToggleSwitchController redstoneToggle = new ToggleSwitchController(
+            "pb-rs-enabled-track", "pb-rs-enabled-knob",
+            () -> be().isRedstoneEnabled(),
+            v -> {
+                be().setRedstoneEnabled(v);   // optimistic on the client entity; the update tag confirms
+                PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
+                        pos(), com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_TOGGLE_ENABLED, 0, 0));
+            });
+
     private final ToggleSwitchController schedulePlaybackToggle = new ToggleSwitchController(
             "pb-schedplay-track", "pb-schedplay-knob",
             () -> scheduleModeOn,
@@ -175,7 +203,47 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     @Override
     protected String overlayJson() {
-        return showSchedule ? SasLayouts.load("layouts/playback-schedule.json") : null;
+        if (showSchedule) return SasLayouts.load("layouts/playback-schedule.json");
+        if (showRedstone) return SasLayouts.load("layouts/playback-redstone.json");
+        return null;
+    }
+
+    /** The rule index under the repeat row being resolved (window offset applied), or -1. */
+    private int ruleIndexAtRow() {
+        int idx = JsonLayoutEngine.currentRepeatIndex();
+        return idx < 0 ? -1 : idx + redstoneScroll.offset();
+    }
+
+    /** The rule under the repeat row being drawn, or null outside the rows. */
+    private com.spatialaudiosystem.redstone.RedstoneRule redstoneRuleAtRow() {
+        int idx = ruleIndexAtRow();
+        java.util.List<com.spatialaudiosystem.redstone.RedstoneRule> rules = be().getRedstoneRules();
+        return idx >= 0 && idx < rules.size() ? rules.get(idx) : null;
+    }
+
+    /** The schedule entry under the repeat row being resolved (window offset applied), or -1. */
+    private int entryAtRow() {
+        int idx = JsonLayoutEngine.currentRepeatIndex();
+        return idx < 0 ? -1 : idx + scheduleScroll.offset();
+    }
+
+    /** The entry's row inside the window, or -1 when it is scrolled out of it. */
+    private int windowRowOf(int entry) {
+        int row = entry - scheduleScroll.offset();
+        return entry >= 0 && row >= 0 && row < VISIBLE_ROWS ? row : -1;
+    }
+
+    /** The entry scope of a rule, for the row: "any" or #n. */
+    private static String entryScopeText(com.spatialaudiosystem.redstone.RedstoneRule rule) {
+        if (rule.entry() == com.spatialaudiosystem.redstone.RedstoneRule.ANY_ENTRY) {
+            return Component.translatable("gui.spatialaudiosystem.rs_entry_any").getString();
+        }
+        return Component.translatable("gui.spatialaudiosystem.rs_entry_n", rule.entry()).getString();
+    }
+
+    private static String seconds(int ticks) {
+        return Component.translatable("gui.spatialaudiosystem.rs_seconds",
+                String.format(java.util.Locale.ROOT, "%.1f", ticks / 20.0)).getString();
     }
 
     @Override
@@ -246,6 +314,30 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     return Component.translatable(
                             "gui.spatialaudiosystem.format_prefix", fmt.toUpperCase()).getString();
                 }
+                case "pb-rs-trigger": {
+                    var rule = redstoneRuleAtRow();
+                    return rule == null ? "" : Component.translatable(
+                            "gui.spatialaudiosystem.rs_trigger_" + rule.trigger().name().toLowerCase(java.util.Locale.ROOT)).getString();
+                }
+                case "pb-rs-strength": {
+                    var rule = redstoneRuleAtRow();
+                    return rule == null ? "" : String.valueOf(rule.strength());
+                }
+                case "pb-rs-delay": {
+                    var rule = redstoneRuleAtRow();
+                    return rule == null ? "" : seconds(rule.delayTicks());
+                }
+                case "pb-rs-length": {
+                    var rule = redstoneRuleAtRow();
+                    if (rule == null) return "";
+                    // A lamp has no length; the column shows a dash and is greyed (colorKey).
+                    return rule.trigger().isPulse() ? seconds(rule.lengthTicks())
+                            : Component.translatable("gui.spatialaudiosystem.rs_na").getString();
+                }
+                case "pb-rs-entry": {
+                    var rule = redstoneRuleAtRow();
+                    return rule == null ? "" : entryScopeText(rule);
+                }
                 case "pb-atten-range": {
                     if (rangeBoardInserted()) {
                         return Component.translatable("gui.spatialaudiosystem.range_board_active").getString();
@@ -264,18 +356,18 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     return trimToFit(text, FILE_MAX_W);
                 }
                 case "pb-entry-index": {
-                    int idx = JsonLayoutEngine.currentRepeatIndex();
+                    int idx = entryAtRow();
                     return idx >= 0 ? String.valueOf(idx + 1) : "";
                 }
                 case "pb-count-display": {
-                    int idx = JsonLayoutEngine.currentRepeatIndex();
+                    int idx = entryAtRow();
                     if (idx < 0) return "";
                     return TIMES + (be.isLoopEntry(idx)
                             ? ENDLESS_COUNT
                             : String.valueOf(be.getPlayCount(idx)));
                 }
                 case "pb-media-info": {
-                    int idx = JsonLayoutEngine.currentRepeatIndex();
+                    int idx = entryAtRow();
                     if (idx < 0) return "";
                     String name = be.getPlaylist().getStackInSlot(idx).get(ModDataComponents.AUDIO_FILE_NAME);
                     if (name == null) return Component.translatable("gui.spatialaudiosystem.entry_empty").getString();
@@ -296,6 +388,15 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             case "pb-atten-knob-bg":  return attenuationToggle.knobBg();
             case "pb-range-track-bg": return rangeToggle.trackBg();
             case "pb-range-knob-bg":  return rangeToggle.knobBg();
+            case "pb-rs-enabled-track-bg": return redstoneToggle.trackBg();
+            case "pb-rs-enabled-knob-bg":  return redstoneToggle.knobBg();
+            case "pb-rs-length-color": {
+                var rule = redstoneRuleAtRow();
+                return rule != null && rule.trigger().isPulse() ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE;
+            }
+            case "pb-rs-entry-color":
+                // Editable either way; grey says it has no effect until the schedule plays.
+                return scheduleModeOn ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE;
             case "pb-schedplay-track-bg": return schedulePlaybackToggle.trackBg();
             case "pb-schedplay-knob-bg":  return schedulePlaybackToggle.knobBg();
             case "pb-loop-btn-color":  return normalLoopOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT;
@@ -310,11 +411,11 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             case "owner-border":
                 return com.manta.api.hud.OwnerAccess.ringColor(be().isPrivateMode());
             case "pb-entry-row-bg": {
-                int idx = JsonLayoutEngine.currentRepeatIndex();
+                int idx = entryAtRow();
                 return idx == be().getPlayingEntry() ? PLAYING_HL_BG : null;
             }
             case "pb-entry-row-border": {
-                int idx = JsonLayoutEngine.currentRepeatIndex();
+                int idx = entryAtRow();
                 return idx == be().getPlayingEntry() ? PLAYING_HL_BORDER : null;
             }
             case "pb-playing-frame-bg":     return PLAYING_HL_BG;
@@ -330,10 +431,14 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             case "pb-atten-knob-x": return attenuationToggle.knobX(defaultValue);
             case "pb-schedplay-knob-x": return schedulePlaybackToggle.knobX(defaultValue);
             case "pb-range-knob-x": return rangeToggle.knobX(defaultValue);
-            case "pb-entry-count":  return showSchedule ? be().getEntryCount() : 0;
+            case "pb-entry-count":  return showSchedule ? scheduleScroll.rowCount() : 0;
+            case "pb-rs-count":     return showRedstone ? redstoneScroll.rowCount() : 0;
+            case "pb-rs-enabled-knob-x": return redstoneToggle.knobX(defaultValue);
+            case "pb-sched-thumb-y": return scheduleScroll.thumbY(defaultValue, LIST_H - 2, THUMB_H);
+            case "pb-rs-thumb-y":    return redstoneScroll.thumbY(defaultValue, RS_LIST_H - 2, THUMB_H);
             case "pb-playing-frame-y": {
-                int idx = Math.max(0, be().getPlayingEntry());
-                return FIRST_ROW_Y + idx * ROW_STRIDE;
+                int row = Math.max(0, windowRowOf(be().getPlayingEntry()));
+                return FIRST_ROW_Y + row * ROW_STRIDE;
             }
             default:
                 return null;
@@ -343,8 +448,10 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     @Override
     public Boolean getDynamicBool(String[] classes, String key, boolean defaultValue) {
         if ("pb-playing-frame-visible".equals(key)) {
-            return showSchedule && be().getPlayingEntry() >= 0;
+            return showSchedule && windowRowOf(be().getPlayingEntry()) >= 0;
         }
+        if ("pb-sched-scrollbar".equals(key)) return scheduleScroll.needsScrollbar();
+        if ("pb-rs-scrollbar".equals(key)) return redstoneScroll.needsScrollbar();
         // The media-slot ✕ is an engine element so it rides the open/close animation;
         // a Java overdraw sat still while the rest of the dialog scaled.
         if ("pb-media-locked".equals(key)) return scheduleModeOn;
@@ -353,6 +460,37 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     @Override
     public boolean onElementWheel(String[] classes, String key, int mouseX, int mouseY, double scrollY) {
+        // The dialog roots carry the list wheel: a row's own value cells are tried first by the
+        // engine (innermost first), so this only sees a wheel that no cell took. Outside the
+        // list it scrolls nothing (the base still swallows a wheel inside the overlay).
+        if ("pb-sched-scroll".equals(key)) {
+            if (mouseY < LIST_Y || mouseY >= LIST_Y + LIST_H) return false;
+            scheduleScroll.scroll(scrollY > 0 ? -1 : 1);
+            return true;
+        }
+        if ("pb-rs-scroll".equals(key)) {
+            if (mouseY < RS_LIST_Y || mouseY >= RS_LIST_Y + RS_LIST_H) return false;
+            redstoneScroll.scroll(scrollY > 0 ? -1 : 1);
+            return true;
+        }
+        if (key != null && key.startsWith("pb-rs-")) {
+            int idx = ruleIndexAtRow();
+            if (idx < 0) return false;
+            int delta = scrollY > 0 ? 1 : -1;   // R4.13.0.4
+            int op;
+            switch (key) {
+                case "pb-rs-trigger-wheel"  -> { be().cycleRedstoneTrigger(idx, delta);   op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_CYCLE_TRIGGER; }
+                case "pb-rs-strength-wheel" -> { be().adjustRedstoneStrength(idx, delta); op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADJUST_STRENGTH; }
+                case "pb-rs-delay-wheel"    -> { be().adjustRedstoneDelay(idx, delta);    op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADJUST_DELAY; }
+                case "pb-rs-length-wheel"   -> { be().adjustRedstoneLength(idx, delta);   op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADJUST_LENGTH; }
+                case "pb-rs-entry-wheel"    -> { be().adjustRedstoneEntry(idx, delta);    op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADJUST_ENTRY; }
+                default -> { return false; }
+            }
+            // Optimistic on the client entity above; the server clamps and its update tag confirms.
+            PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
+                    pos(), op, idx, delta));
+            return true;
+        }
         if ("pb-range-wheel".equals(key)) {
             // Consumed even when a board is inserted: the value is not in effect then, and
             // letting the wheel fall through would change something else under the cursor.
@@ -365,7 +503,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             return true;
         }
         if ("pb-count-wheel".equals(key)) {
-            int idx = JsonLayoutEngine.currentRepeatIndex();
+            int idx = entryAtRow();
             if (idx < 0) return false;
             int delta = scrollY > 0 ? 1 : -1;
             PacketDistributor.sendToServer(new PlaylistCommandPayload(
@@ -382,6 +520,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         if (attenuationToggle.handleClick(classes)) return;
         if (rangeToggle.handleClick(classes)) return;
         if (schedulePlaybackToggle.handleClick(classes)) return;
+        if (showRedstone && redstoneToggle.handleClick(classes)) return;
         if (com.manta.api.hud.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
             sendButtonClick(com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON);
             return;
@@ -421,7 +560,37 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     PacketDistributor.sendToServer(new PlaylistCommandPayload(
                             pos(), PlaylistCommandPayload.OP_PLAY_ALL, 0, 0));
                     return;
+                case "pb-redstone-btn":
+                    // The button is a canvas node (self-clickable in the engine), so this is
+                    // the class the click arrives with.
+                    closeSchedule();
+                    showRedstone = true;
+                    return;
+                case "pb-rs-close":
+                    closeRedstone();
+                    return;
+                case "pb-rs-add-btn":
+                    be().addRedstoneRule();   // optimistic; refused past sixteen on both sides
+                    PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
+                            pos(), com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADD, 0, 0));
+                    return;
+                case "pb-rs-up-btn":
+                    moveRule(-1);
+                    return;
+                case "pb-rs-down-btn":
+                    moveRule(1);
+                    return;
+                case "pb-rs-del-btn": {
+                    int idx = ruleIndexAtRow();
+                    if (idx >= 0) {
+                        be().removeRedstoneRule(idx);
+                        PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
+                                pos(), com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_REMOVE, idx, 0));
+                    }
+                    return;
+                }
                 case "pb-sched-btn":
+                    showRedstone = false;
                     showSchedule = true;
                     scheduleOpenedAtNanos = System.nanoTime();
                     return;
@@ -433,27 +602,32 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                             pos(), PlaylistCommandPayload.OP_ADD_ENTRY, 0, 0));
                     return;
                 case "pb-entry-up-btn": {
-                    int idx = JsonLayoutEngine.currentRepeatIndex();
+                    int idx = entryAtRow();
                     if (idx > 0) PacketDistributor.sendToServer(new PlaylistCommandPayload(
                             pos(), PlaylistCommandPayload.OP_REORDER, idx, idx - 1));
                     return;
                 }
                 case "pb-entry-down-btn": {
-                    int idx = JsonLayoutEngine.currentRepeatIndex();
+                    int idx = entryAtRow();
                     if (idx >= 0 && idx + 1 < be().getEntryCount()) {
                         PacketDistributor.sendToServer(new PlaylistCommandPayload(
                                 pos(), PlaylistCommandPayload.OP_REORDER, idx, idx + 1));
                     }
                     return;
                 }
+                case "pb-entry-stop-btn":
+                    // The row's stop: the same stop as the header's, the device plays one thing.
+                    PacketDistributor.sendToServer(new PlaylistCommandPayload(
+                            pos(), PlaylistCommandPayload.OP_STOP, 0, 0));
+                    return;
                 case "pb-entry-test-btn": {
-                    int idx = JsonLayoutEngine.currentRepeatIndex();
+                    int idx = entryAtRow();
                     if (idx >= 0) PacketDistributor.sendToServer(new PlaylistCommandPayload(
                             pos(), PlaylistCommandPayload.OP_TEST, idx, 0));
                     return;
                 }
                 case "pb-entry-del-btn": {
-                    int idx = JsonLayoutEngine.currentRepeatIndex();
+                    int idx = entryAtRow();
                     if (idx >= 0) PacketDistributor.sendToServer(new PlaylistCommandPayload(
                             pos(), PlaylistCommandPayload.OP_REMOVE_ENTRY, idx, 0));
                     return;
@@ -463,20 +637,59 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         }
     }
 
+    /** A rule swaps places with its neighbour; at either end the click does nothing. */
+    private void moveRule(int delta) {
+        int idx = ruleIndexAtRow();
+        int to = idx + delta;
+        if (idx < 0 || to < 0 || to >= be().getRedstoneRules().size()) return;
+        be().moveRedstoneRule(idx, delta);   // optimistic; the server does the same swap
+        PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
+                pos(), com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_MOVE, idx, delta));
+    }
+
     private void closeSchedule() {
         showSchedule = false;
         scheduleOpenedAtNanos = 0L;
         hideScheduleSlots();
     }
 
+    private void closeRedstone() {
+        showRedstone = false;
+    }
+
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        followListSizes();
         if (showSchedule) positionScheduleSlots(); else hideScheduleSlots();
         super.render(g, mouseX, mouseY, partialTick);
         if (showSchedule) {
             renderScheduleOverlayItems(g, mouseX, mouseY);
             renderCarriedAbovePopup(g, mouseX, mouseY);
             renderHoveredPlaylistTooltip(g, mouseX, mouseY);
+        }
+    }
+
+    /**
+     * An added entry or rule lands at the end of its list, which may be below the window:
+     * scroll there when a list grows. When one shrinks, the offset is re-clamped so the
+     * window never points past the end.
+     */
+    private void followListSizes() {
+        int entries = be().getEntryCount();
+        if (entries != lastEntryCount) {
+            if (entries > lastEntryCount && lastEntryCount >= 0) {
+                scheduleScroll.setOffset(entries - VISIBLE_ROWS);
+            }
+            scheduleScroll.clamp();
+            lastEntryCount = entries;
+        }
+        int rules = be().getRedstoneRules().size();
+        if (rules != lastRuleCount) {
+            if (rules > lastRuleCount && lastRuleCount >= 0) {
+                redstoneScroll.setOffset(rules - VISIBLE_ROWS);
+            }
+            redstoneScroll.clamp();
+            lastRuleCount = rules;
         }
     }
 
@@ -522,11 +735,12 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         int n = be().getEntryCount();
         for (int i = 0; i < PlaybackDeviceBlockEntity.MAX_ENTRIES; i++) {
             int slotIdx = PlaybackDeviceMenu.PLAYLIST_MENU_BASE + i;
-            if (i < n) {
+            int row = windowRowOf(i);
+            if (i < n && row >= 0) {
                 // Manta owns the overlay transform (origin-pivot scale); go through its API
                 // instead of hand-rolling origin + scale, which is easy to get subtly wrong.
                 int sx = Math.round(overlayLocalToScreenX(SLOT_ROW_X)) - this.leftPos;
-                int sy = Math.round(overlayLocalToScreenY(SLOT_ROW_Y + i * ROW_STRIDE))
+                int sy = Math.round(overlayLocalToScreenY(SLOT_ROW_Y + row * ROW_STRIDE))
                         - this.topPos;
                 setMenuSlotPos(slotIdx, sx, sy);
             } else {
@@ -650,10 +864,39 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                            int x, int y, int w, int h, int mouseX, int mouseY) {
         switch (key) {
             case "pb-jacket" -> drawJacket(g, x, y, w, h);
+            case "pb-redstone-icon" -> drawRedstoneButtonIcon(g, x, y, w, h, mouseX, mouseY);
             case "owner-face" -> com.manta.api.hud.OwnerFacePainter.draw(
                     g, x, y, w, h, be().getOwnerUUID());
             default -> { }
         }
+    }
+
+    /**
+     * The redstone button's own icon: a four-pointed dust crystal with a darker heart, in the
+     * palette's red. Drawn through Manta's SVG path so it scales with the dialog like the
+     * registry icons do; a texture would have needed a second copy per scale.
+     */
+    private static final String REDSTONE_SVG = redstoneSvg("#ef5350", "#b71c1c");
+    /** The hovered form: white like every other button's hoverColor, the heart kept red. */
+    private static final String REDSTONE_SVG_HOVER = redstoneSvg("#ffffff", "#ef5350");
+
+    private static String redstoneSvg(String fill, String heart) {
+        return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\">"
+                + "<path fill=\"" + fill + "\" d=\"M8 0.5 L10.6 5.4 L15.5 8 L10.6 10.6 L8 15.5 L5.4 10.6 L0.5 8 L5.4 5.4 Z\"/>"
+                + "<path fill=\"" + heart + "\" d=\"M8 5 L10 8 L8 11 L6 8 Z\"/>"
+                + "</svg>";
+    }
+
+    /**
+     * The whole button is the canvas (its rect layer paints the frame and the hover fill), and
+     * the icon is drawn inset, white while the mouse is over it. A canvas child inside a div
+     * took the hover for itself, so the div's hover colours never showed (real device, 2026-09-03).
+     */
+    private static void drawRedstoneButtonIcon(GuiGraphics g, int x, int y, int w, int h, int mouseX, int mouseY) {
+        boolean hovered = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
+        int size = Math.min(w, h) - 2;
+        com.manta.api.svg.SvgIcon.draw(g, hovered ? REDSTONE_SVG_HOVER : REDSTONE_SVG,
+                x + (w - size) / 2, y + (h - size) / 2, size, size);
     }
 
     /** Draws the single-play medium's cover art, requesting it once, or a placeholder item. */
@@ -680,6 +923,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             if (showSchedule) { closeSchedule(); return true; }
+            if (showRedstone) { closeRedstone(); return true; }
             onClose();
             return true;
         }

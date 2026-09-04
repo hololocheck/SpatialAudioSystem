@@ -72,6 +72,25 @@ public class PlaybackDeviceBlock extends BaseEntityBlock {
         return InteractionResult.sidedSuccess(level.isClientSide());
     }
 
+    /** Output is the block entity's; the block is only the face the wire touches. */
+    @Override
+    protected boolean isSignalSource(BlockState state) {
+        return true;
+    }
+
+    /**
+     * Weak power on every face, like a comparator's: dust, a lamp, a repeater or a piston
+     * touching the device see it. Deliberately not strong power (getDirectSignal is left at
+     * zero): a strong source has to update the neighbours of every block it powers as well
+     * as its own, and the device only tells its own -- so dust behind a solid block would
+     * have kept a stale level (review, 2026-09-03).
+     */
+    @Override
+    protected int getSignal(BlockState state, BlockGetter level, BlockPos pos, Direction direction) {
+        return level.getBlockEntity(pos) instanceof PlaybackDeviceBlockEntity device
+                ? device.getRedstoneOutput() : 0;
+    }
+
     @Override
     public boolean canConnectRedstone(BlockState state, BlockGetter level, BlockPos pos, @Nullable Direction direction) {
         return true;
@@ -83,11 +102,18 @@ public class PlaybackDeviceBlock extends BaseEntityBlock {
         boolean wasPowered = state.getValue(POWERED);
 
         if (powered != wasPowered) {
+            // POWERED always follows the wire, guard or no guard: the first version returned
+            // before this write, so a lever pressed while a lamp rule was on was dropped and
+            // then read as a fresh rising edge the moment the output fell (review, 2026-09-03).
             level.setBlock(pos, state.setValue(POWERED, powered), 3);
             // Only start playback on rising edge; don't stop on falling edge
             if (powered && !wasPowered) {
                 BlockEntity entity = level.getBlockEntity(pos);
                 if (entity instanceof PlaybackDeviceBlockEntity blockEntity) {
+                    // The device's own output can be what powers the dust beside it. A lamp
+                    // rule that lit that dust must not read as a press and restart the sound,
+                    // so a rising edge while the device is outputting is not a start.
+                    if (blockEntity.getRedstoneOutput() > 0) return;
                     blockEntity.startPlayback();
                 }
             }

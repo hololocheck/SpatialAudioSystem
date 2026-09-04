@@ -1,0 +1,428 @@
+{
+  "tag": "div",
+  "classes": [
+    "dialog",
+    "pb-redstone-popup"
+  ],
+  "x": 0,
+  "y": 0,
+  "w": 240,
+  "h": 270,
+  "bg": "#1a1a2e",
+  "borderColor": "#ef5350",
+  "borderWidth": 2,
+  "borderRadius": 10,
+  "animationKey": "dialog-open",
+  "wheelKey": "pb-rs-scroll",
+  "children": [
+    {
+      "tag": "span",
+      "classes": [
+        "pb-rs-title"
+      ],
+      "x": 10,
+      "y": 12,
+      "w": 126,
+      "h": 11,
+      "color": "#ef5350",
+      "fontWeight": "bold",
+      "translatableKey": "gui.spatialaudiosystem.redstone_output"
+    },
+    {
+      "tag": "span",
+      "classes": [
+        "pb-rs-enabled-label"
+      ],
+      "x": 138,
+      "y": 12,
+      "w": 42,
+      "h": 11,
+      "color": "#80deea",
+      "textAlign": "right",
+      "translatableKey": "gui.spatialaudiosystem.redstone_enabled"
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-rs-enabled-track"
+      ],
+      "x": 184,
+      "y": 11,
+      "w": 24,
+      "h": 12,
+      "bg": "#555",
+      "borderRadius": 6,
+      "bgKey": "pb-rs-enabled-track-bg",
+      "clickable": true,
+      "transitionKey": "toggle-bg"
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-rs-enabled-knob"
+      ],
+      "x": 186,
+      "y": 13,
+      "w": 8,
+      "h": 8,
+      "bg": "#aaa",
+      "borderRadius": 4,
+      "bgKey": "pb-rs-enabled-knob-bg",
+      "dynamicX": "pb-rs-enabled-knob-x",
+      "transitionKey": "toggle-knob"
+    },
+    {
+      "tag": "icon",
+      "classes": [
+        "pb-rs-close"
+      ],
+      "icon": "manta:x",
+      "x": 214,
+      "y": 10,
+      "w": 16,
+      "h": 14,
+      "bg": "rgba(255,255,255,0.05)",
+      "color": "#aaa",
+      "borderColor": "#555",
+      "borderWidth": 1,
+      "borderRadius": 3,
+      "textAlign": "center",
+      "hoverColor": "#f44",
+      "hoverBorderColor": "#f44",
+      "clickable": true
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-rs-sep"
+      ],
+      "x": 10,
+      "y": 26,
+      "w": 220,
+      "h": 1,
+      "bg": "#ef5350"
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-rs-add-btn"
+      ],
+      "x": 10,
+      "y": 30,
+      "w": 72,
+      "h": 14,
+      "bg": "rgba(239,83,80,0.10)",
+      "color": "#ef5350",
+      "borderColor": "#ef5350",
+      "borderWidth": 1,
+      "borderRadius": 3,
+      "textAlign": "center",
+      "hoverBg": "rgba(239,83,80,0.25)",
+      "hoverColor": "#fff",
+      "clickable": true,
+      "translatableKey": "gui.spatialaudiosystem.btn_add_entry"
+    },
+    {
+      "tag": "span",
+      "classes": [
+        "pb-rs-col-trigger"
+      ],
+      "x": 26,
+      "y": 46,
+      "w": 58,
+      "h": 9,
+      "color": "#888888",
+      "textAlign": "left",
+      "translatableKey": "gui.spatialaudiosystem.rs_col_trigger"
+    },
+    {
+      "tag": "span",
+      "classes": [
+        "pb-rs-col-strength"
+      ],
+      "x": 86,
+      "y": 46,
+      "w": 32,
+      "h": 9,
+      "color": "#888888",
+      "textAlign": "center",
+      "translatableKey": "gui.spatialaudiosystem.rs_col_strength"
+    },
+    {
+      "tag": "span",
+      "classes": [
+        "pb-rs-col-delay"
+      ],
+      "x": 120,
+      "y": 46,
+      "w": 40,
+      "h": 9,
+      "color": "#888888",
+      "textAlign": "center",
+      "translatableKey": "gui.spatialaudiosystem.rs_col_delay"
+    },
+    {
+      "tag": "span",
+      "classes": [
+        "pb-rs-col-length"
+      ],
+      "x": 163,
+      "y": 46,
+      "w": 40,
+      "h": 9,
+      "color": "#888888",
+      "textAlign": "center",
+      "translatableKey": "gui.spatialaudiosystem.rs_col_length"
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-rs-list-bg"
+      ],
+      "x": 8,
+      "y": 56,
+      "w": 216,
+      "h": 208,
+      "bg": "rgba(0,0,0,0.45)",
+      "borderColor": "#444",
+      "borderWidth": 1,
+      "borderRadius": 3
+    },
+    {
+      "tag": "repeat",
+      "classes": [
+        "pb-rs-rows"
+      ],
+      "x": 8,
+      "y": 56,
+      "w": 216,
+      "h": 208,
+      "countKey": "pb-rs-count",
+      "stride": 35,
+      "template": {
+        "tag": "div",
+        "classes": [
+          "pb-rs-row"
+        ],
+        "x": 10,
+        "y": 58,
+        "w": 214,
+        "h": 33,
+        "bg": "rgba(239,83,80,0.05)",
+        "borderColor": "#444",
+        "borderWidth": 1,
+        "borderRadius": 2,
+        "children": [
+          {
+            "tag": "icon",
+            "classes": [
+              "pb-rs-up-btn"
+            ],
+            "icon": "manta:chevron-up",
+            "x": 12,
+            "y": 60,
+            "w": 10,
+            "h": 11,
+            "bg": "rgba(79,195,247,0.10)",
+            "color": "#4fc3f7",
+            "borderColor": "#4fc3f7",
+            "borderWidth": 1,
+            "borderRadius": 1,
+            "textAlign": "center",
+            "hoverBg": "rgba(79,195,247,0.25)",
+            "hoverColor": "#fff",
+            "clickable": true
+          },
+          {
+            "tag": "icon",
+            "classes": [
+              "pb-rs-down-btn"
+            ],
+            "icon": "manta:chevron-down",
+            "x": 12,
+            "y": 78,
+            "w": 10,
+            "h": 11,
+            "bg": "rgba(79,195,247,0.10)",
+            "color": "#4fc3f7",
+            "borderColor": "#4fc3f7",
+            "borderWidth": 1,
+            "borderRadius": 1,
+            "textAlign": "center",
+            "hoverBg": "rgba(79,195,247,0.25)",
+            "hoverColor": "#fff",
+            "clickable": true
+          },
+          {
+            "tag": "div",
+            "classes": [
+              "pb-rs-trigger"
+            ],
+            "x": 26,
+            "y": 61,
+            "w": 58,
+            "h": 13,
+            "bg": "rgba(0,0,0,0.4)",
+            "color": "#ffd54f",
+            "borderColor": "#666",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "textKey": "pb-rs-trigger",
+            "hoverBg": "rgba(255,213,79,0.20)",
+            "hoverBorderColor": "#ffd54f",
+            "wheelKey": "pb-rs-trigger-wheel"
+          },
+          {
+            "tag": "div",
+            "classes": [
+              "pb-rs-strength"
+            ],
+            "x": 87,
+            "y": 61,
+            "w": 30,
+            "h": 13,
+            "bg": "rgba(0,0,0,0.4)",
+            "color": "#ffd54f",
+            "borderColor": "#666",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "textKey": "pb-rs-strength",
+            "hoverBg": "rgba(255,213,79,0.20)",
+            "hoverBorderColor": "#ffd54f",
+            "wheelKey": "pb-rs-strength-wheel"
+          },
+          {
+            "tag": "div",
+            "classes": [
+              "pb-rs-delay"
+            ],
+            "x": 120,
+            "y": 61,
+            "w": 40,
+            "h": 13,
+            "bg": "rgba(0,0,0,0.4)",
+            "color": "#ffd54f",
+            "borderColor": "#666",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "textKey": "pb-rs-delay",
+            "hoverBg": "rgba(255,213,79,0.20)",
+            "hoverBorderColor": "#ffd54f",
+            "wheelKey": "pb-rs-delay-wheel"
+          },
+          {
+            "tag": "div",
+            "classes": [
+              "pb-rs-length"
+            ],
+            "x": 163,
+            "y": 61,
+            "w": 40,
+            "h": 13,
+            "bg": "rgba(0,0,0,0.4)",
+            "color": "#ffd54f",
+            "borderColor": "#666",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "textKey": "pb-rs-length",
+            "hoverBg": "rgba(255,213,79,0.20)",
+            "hoverBorderColor": "#ffd54f",
+            "wheelKey": "pb-rs-length-wheel",
+            "colorKey": "pb-rs-length-color"
+          },
+          {
+            "tag": "icon",
+            "classes": [
+              "pb-rs-del-btn"
+            ],
+            "icon": "manta:trash-2",
+            "x": 206,
+            "y": 61,
+            "w": 16,
+            "h": 13,
+            "bg": "rgba(239,83,80,0.15)",
+            "color": "#ef5350",
+            "borderColor": "#ef5350",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "hoverBg": "rgba(239,83,80,0.30)",
+            "hoverColor": "#fff",
+            "clickable": true
+          },
+          {
+            "tag": "span",
+            "classes": [
+              "pb-rs-entry-label"
+            ],
+            "x": 26,
+            "y": 78,
+            "w": 34,
+            "h": 9,
+            "color": "#888888",
+            "translatableKey": "gui.spatialaudiosystem.rs_col_entry"
+          },
+          {
+            "tag": "div",
+            "classes": [
+              "pb-rs-entry"
+            ],
+            "x": 62,
+            "y": 76,
+            "w": 44,
+            "h": 13,
+            "bg": "rgba(0,0,0,0.4)",
+            "color": "#ffd54f",
+            "borderColor": "#666",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "textKey": "pb-rs-entry",
+            "hoverBg": "rgba(255,213,79,0.20)",
+            "hoverBorderColor": "#ffd54f",
+            "wheelKey": "pb-rs-entry-wheel",
+            "colorKey": "pb-rs-entry-color"
+          }
+        ]
+      }
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-rs-scrollbar",
+        "scrollbar-track"
+      ],
+      "x": 226,
+      "y": 56,
+      "w": 6,
+      "h": 208,
+      "bg": "rgba(0,0,0,0.3)",
+      "borderColor": "#444",
+      "borderWidth": 1,
+      "borderRadius": 3,
+      "visibleKey": "pb-rs-scrollbar",
+      "children": [
+        {
+          "tag": "div",
+          "classes": [
+            "pb-rs-thumb",
+            "scrollbar-thumb"
+          ],
+          "x": 227,
+          "y": 57,
+          "w": 4,
+          "h": 20,
+          "bg": "#ef5350",
+          "borderRadius": 2,
+          "visibleKey": "pb-rs-scrollbar",
+          "dynamicY": "pb-rs-thumb-y",
+          "transitionKey": "toggle-knob"
+        }
+      ]
+    }
+  ]
+}

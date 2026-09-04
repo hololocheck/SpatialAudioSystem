@@ -27,7 +27,7 @@ class PlaybackTimeoutP1Test {
     private static final long TIMEOUT_TICKS = 12_000L;
 
     private static PlaybackDeviceBlockEntity newDevice() {
-        return new ObjenesisStd().newInstance(PlaybackDeviceBlockEntity.class);
+        return com.spatialaudiosystem.blockentity.TestDevices.newBare();
     }
 
     private static void set(Object target, String field, Object value) {
@@ -52,7 +52,7 @@ class PlaybackTimeoutP1Test {
     void playbackRestoredWithoutAStartTimeIsCleanedUp() {
         PlaybackDeviceBlockEntity device = newDevice();
 
-        // saveAdditional writes isPlaying but not playbackStartTick, so a world saved
+        // before 2026-09-03 saveAdditional wrote isPlaying but not playbackStartTick, so a world saved
         // mid-sound reloads as "playing" with a start time of 0. No client is rendering
         // that sound any more, so the timeout is what clears the phantom.
         set(device, "isPlaying", true);

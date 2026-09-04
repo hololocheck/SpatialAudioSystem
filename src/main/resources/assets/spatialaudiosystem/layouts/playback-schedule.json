@@ -1,1 +1,411 @@
-{"tag":"div","classes":["dialog","pb-schedule-popup"],"bg":"#1a1a2e","borderColor":"#ffc107","borderWidth":2,"borderRadius":10,"x":0,"y":0,"w":240,"h":270,"animationKey":"dialog-open","children":[{"bg":"","color":"#ffc107","borderColor":"","borderWidth":0,"borderRadius":0,"fontWeight":"bold","isSlot":false,"text":"","tag":"span","classes":["pb-sched-title"],"x":10,"y":12,"w":190,"h":11,"children":[],"translatableKey":"gui.spatialaudiosystem.playlist_schedule"},{"bg":"rgba(255,255,255,0.05)","color":"#aaa","borderColor":"#555","borderWidth":1,"borderRadius":3,"fontWeight":"","isSlot":false,"icon":"manta:x","tag":"icon","classes":["pb-sched-close"],"x":214,"y":10,"w":16,"h":14,"children":[],"textAlign":"center","hoverColor":"#f44","hoverBorderColor":"#f44","clickable":true},{"bg":"#ffc107","color":"","borderColor":"","borderWidth":0,"borderRadius":0,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-sched-sep"],"x":10,"y":26,"w":220,"h":1,"children":[]},{"bg":"rgba(255,193,7,0.10)","color":"#ffc107","borderColor":"#ffc107","borderWidth":1,"borderRadius":3,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-add-entry-btn"],"x":10,"y":32,"w":72,"h":14,"children":[],"textAlign":"center","hoverBg":"rgba(255,193,7,0.25)","hoverColor":"#fff","clickable":true,"translatableKey":"gui.spatialaudiosystem.btn_add_entry"},{"bg":"rgba(102,187,106,0.10)","color":"#66bb6a","borderColor":"#66bb6a","borderWidth":1,"borderRadius":3,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-sched-playall-btn"],"x":86,"y":32,"w":58,"h":14,"children":[],"textAlign":"center","hoverBg":"rgba(102,187,106,0.25)","hoverColor":"#fff","clickable":true,"translatableKey":"gui.spatialaudiosystem.btn_play_all"},{"bg":"rgba(239,83,80,0.15)","color":"#ef5350","borderColor":"#ef5350","borderWidth":1,"borderRadius":3,"fontWeight":"","isSlot":false,"icon":"manta:square","tag":"icon","classes":["pb-sched-stop-btn"],"x":148,"y":32,"w":30,"h":14,"children":[],"textAlign":"center","hoverBg":"rgba(239,83,80,0.30)","hoverColor":"#fff","clickable":true},{"bg":"rgba(0,0,0,0.45)","color":"","borderColor":"#444","borderWidth":1,"borderRadius":3,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-list-bg"],"x":8,"y":50,"w":224,"h":212,"children":[]},{"bg":"","color":"","borderColor":"","borderWidth":0,"borderRadius":0,"fontWeight":"","isSlot":false,"text":"","tag":"repeat","classes":["pb-entries-repeat"],"x":8,"y":50,"w":224,"h":212,"children":[],"countKey":"pb-entry-count","stride":35,"template":{"bg":"rgba(255,193,7,0.05)","color":"","borderColor":"#444","borderWidth":1,"borderRadius":2,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-entry-row"],"x":10,"y":52,"w":220,"h":33,"children":[{"bg":"rgba(79,195,247,0.10)","color":"#4fc3f7","borderColor":"#4fc3f7","borderWidth":1,"borderRadius":1,"fontWeight":"","isSlot":false,"icon":"manta:chevron-up","tag":"icon","classes":["pb-entry-up-btn"],"x":12,"y":54,"w":10,"h":11,"children":[],"textAlign":"center","hoverBg":"rgba(79,195,247,0.25)","hoverColor":"#fff","clickable":true},{"bg":"rgba(79,195,247,0.10)","color":"#4fc3f7","borderColor":"#4fc3f7","borderWidth":1,"borderRadius":1,"fontWeight":"","isSlot":false,"icon":"manta:chevron-down","tag":"icon","classes":["pb-entry-down-btn"],"x":12,"y":71,"w":10,"h":11,"children":[],"textAlign":"center","hoverBg":"rgba(79,195,247,0.25)","hoverColor":"#fff","clickable":true},{"bg":"","color":"#ffc107","borderColor":"","borderWidth":0,"borderRadius":0,"fontWeight":"bold","isSlot":false,"text":"","tag":"span","classes":["pb-entry-index"],"x":26,"y":56,"w":16,"h":9,"children":[],"textKey":"pb-entry-index"},{"bg":"rgba(0,0,0,0.4)","color":"#80deea","borderColor":"#666","borderWidth":1,"borderRadius":2,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-count-display"],"x":46,"y":55,"w":30,"h":11,"children":[],"textKey":"pb-count-display","textAlign":"center","hoverBg":"rgba(128,222,234,0.20)","hoverBorderColor":"#80deea","wheelKey":"pb-count-wheel"},{"bg":"rgba(102,187,106,0.15)","color":"#66bb6a","borderColor":"#66bb6a","borderWidth":1,"borderRadius":2,"fontWeight":"","isSlot":false,"icon":"manta:play","tag":"icon","classes":["pb-entry-test-btn"],"x":82,"y":55,"w":14,"h":11,"children":[],"textAlign":"center","hoverBg":"rgba(102,187,106,0.30)","hoverColor":"#fff","clickable":true},{"bg":"rgba(239,83,80,0.15)","color":"#ef5350","borderColor":"#ef5350","borderWidth":1,"borderRadius":2,"fontWeight":"","isSlot":false,"icon":"manta:x","tag":"icon","classes":["pb-entry-del-btn"],"x":100,"y":55,"w":14,"h":11,"children":[],"textAlign":"center","hoverBg":"rgba(239,83,80,0.30)","hoverColor":"#fff","clickable":true},{"bg":"","color":"#888888","borderColor":"","borderWidth":0,"borderRadius":0,"fontWeight":"","isSlot":false,"text":"","tag":"span","classes":["pb-media-info"],"x":26,"y":71,"w":150,"h":9,"children":[],"textKey":"pb-media-info"},{"bg":"rgba(0,0,0,0.55)","color":"","borderColor":"#666","borderWidth":1,"borderRadius":1,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-media-slot-frame"],"x":192,"y":55,"w":18,"h":18,"children":[]}],"bgKey":"pb-entry-row-bg","borderColorKey":"pb-entry-row-border","animationKey":"pb-entry-shuffle","transitionKey":"pb-entry-active"}},{"bg":"rgba(79,195,247,0.06)","color":"","borderColor":"#4fc3f7","borderWidth":2,"borderRadius":2,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-playing-frame"],"x":10,"y":52,"w":220,"h":33,"children":[],"bgKey":"pb-playing-frame-bg","borderColorKey":"pb-playing-frame-border","dynamicY":"pb-playing-frame-y","transitionKey":"pb-playing-frame-move","visibleKey":"pb-playing-frame-visible"},{"bg":"#555","color":"","borderColor":"","borderWidth":0,"borderRadius":6,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-schedplay-track"],"x":208,"y":33,"w":24,"h":12,"children":[],"bgKey":"pb-schedplay-track-bg","clickable":true,"transitionKey":"toggle-bg"},{"bg":"#aaa","color":"","borderColor":"","borderWidth":0,"borderRadius":4,"fontWeight":"","isSlot":false,"text":"","tag":"div","classes":["pb-schedplay-knob"],"x":210,"y":35,"w":8,"h":8,"children":[],"bgKey":"pb-schedplay-knob-bg","dynamicX":"pb-schedplay-knob-x","transitionKey":"toggle-knob"}]}
+{
+  "tag": "div",
+  "classes": [
+    "dialog",
+    "pb-schedule-popup"
+  ],
+  "x": 0,
+  "y": 0,
+  "w": 240,
+  "h": 270,
+  "bg": "#1a1a2e",
+  "borderColor": "#ffc107",
+  "borderWidth": 2,
+  "borderRadius": 10,
+  "animationKey": "dialog-open",
+  "wheelKey": "pb-sched-scroll",
+  "children": [
+    {
+      "tag": "span",
+      "classes": [
+        "pb-sched-title"
+      ],
+      "x": 10,
+      "y": 12,
+      "w": 190,
+      "h": 11,
+      "color": "#ffc107",
+      "fontWeight": "bold",
+      "translatableKey": "gui.spatialaudiosystem.playlist_schedule"
+    },
+    {
+      "tag": "icon",
+      "classes": [
+        "pb-sched-close"
+      ],
+      "icon": "manta:x",
+      "x": 214,
+      "y": 10,
+      "w": 16,
+      "h": 14,
+      "bg": "rgba(255,255,255,0.05)",
+      "color": "#aaa",
+      "borderColor": "#555",
+      "borderWidth": 1,
+      "borderRadius": 3,
+      "textAlign": "center",
+      "hoverColor": "#f44",
+      "hoverBorderColor": "#f44",
+      "clickable": true
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-sched-sep"
+      ],
+      "x": 10,
+      "y": 26,
+      "w": 220,
+      "h": 1,
+      "bg": "#ffc107"
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-add-entry-btn"
+      ],
+      "x": 10,
+      "y": 32,
+      "w": 72,
+      "h": 14,
+      "bg": "rgba(255,193,7,0.10)",
+      "color": "#ffc107",
+      "borderColor": "#ffc107",
+      "borderWidth": 1,
+      "borderRadius": 3,
+      "textAlign": "center",
+      "hoverBg": "rgba(255,193,7,0.25)",
+      "hoverColor": "#fff",
+      "clickable": true,
+      "translatableKey": "gui.spatialaudiosystem.btn_add_entry"
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-sched-playall-btn"
+      ],
+      "x": 86,
+      "y": 32,
+      "w": 58,
+      "h": 14,
+      "bg": "rgba(102,187,106,0.10)",
+      "color": "#66bb6a",
+      "borderColor": "#66bb6a",
+      "borderWidth": 1,
+      "borderRadius": 3,
+      "textAlign": "center",
+      "hoverBg": "rgba(102,187,106,0.25)",
+      "hoverColor": "#fff",
+      "clickable": true,
+      "translatableKey": "gui.spatialaudiosystem.btn_play_all"
+    },
+    {
+      "tag": "icon",
+      "classes": [
+        "pb-sched-stop-btn"
+      ],
+      "icon": "manta:square",
+      "x": 148,
+      "y": 32,
+      "w": 30,
+      "h": 14,
+      "bg": "rgba(239,83,80,0.15)",
+      "color": "#ef5350",
+      "borderColor": "#ef5350",
+      "borderWidth": 1,
+      "borderRadius": 3,
+      "textAlign": "center",
+      "hoverBg": "rgba(239,83,80,0.30)",
+      "hoverColor": "#fff",
+      "clickable": true
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-list-bg"
+      ],
+      "x": 8,
+      "y": 50,
+      "w": 216,
+      "h": 212,
+      "bg": "rgba(0,0,0,0.45)",
+      "borderColor": "#444",
+      "borderWidth": 1,
+      "borderRadius": 3
+    },
+    {
+      "tag": "repeat",
+      "classes": [
+        "pb-entries-repeat"
+      ],
+      "x": 8,
+      "y": 50,
+      "w": 216,
+      "h": 212,
+      "countKey": "pb-entry-count",
+      "stride": 35,
+      "template": {
+        "tag": "div",
+        "classes": [
+          "pb-entry-row"
+        ],
+        "x": 10,
+        "y": 52,
+        "w": 214,
+        "h": 33,
+        "bg": "rgba(255,193,7,0.05)",
+        "borderColor": "#444",
+        "borderWidth": 1,
+        "borderRadius": 2,
+        "bgKey": "pb-entry-row-bg",
+        "borderColorKey": "pb-entry-row-border",
+        "animationKey": "pb-entry-shuffle",
+        "transitionKey": "pb-entry-active",
+        "children": [
+          {
+            "tag": "icon",
+            "classes": [
+              "pb-entry-up-btn"
+            ],
+            "icon": "manta:chevron-up",
+            "x": 12,
+            "y": 54,
+            "w": 10,
+            "h": 11,
+            "bg": "rgba(79,195,247,0.10)",
+            "color": "#4fc3f7",
+            "borderColor": "#4fc3f7",
+            "borderWidth": 1,
+            "borderRadius": 1,
+            "textAlign": "center",
+            "hoverBg": "rgba(79,195,247,0.25)",
+            "hoverColor": "#fff",
+            "clickable": true
+          },
+          {
+            "tag": "icon",
+            "classes": [
+              "pb-entry-down-btn"
+            ],
+            "icon": "manta:chevron-down",
+            "x": 12,
+            "y": 71,
+            "w": 10,
+            "h": 11,
+            "bg": "rgba(79,195,247,0.10)",
+            "color": "#4fc3f7",
+            "borderColor": "#4fc3f7",
+            "borderWidth": 1,
+            "borderRadius": 1,
+            "textAlign": "center",
+            "hoverBg": "rgba(79,195,247,0.25)",
+            "hoverColor": "#fff",
+            "clickable": true
+          },
+          {
+            "tag": "span",
+            "classes": [
+              "pb-entry-index"
+            ],
+            "x": 26,
+            "y": 56,
+            "w": 16,
+            "h": 9,
+            "color": "#ffc107",
+            "fontWeight": "bold",
+            "textKey": "pb-entry-index"
+          },
+          {
+            "tag": "div",
+            "classes": [
+              "pb-count-display"
+            ],
+            "x": 46,
+            "y": 54,
+            "w": 30,
+            "h": 13,
+            "bg": "rgba(0,0,0,0.4)",
+            "color": "#80deea",
+            "borderColor": "#666",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textKey": "pb-count-display",
+            "textAlign": "center",
+            "hoverBg": "rgba(128,222,234,0.20)",
+            "hoverBorderColor": "#80deea",
+            "wheelKey": "pb-count-wheel"
+          },
+          {
+            "tag": "icon",
+            "classes": [
+              "pb-entry-test-btn"
+            ],
+            "icon": "manta:play",
+            "x": 82,
+            "y": 54,
+            "w": 14,
+            "h": 13,
+            "bg": "rgba(102,187,106,0.15)",
+            "color": "#66bb6a",
+            "borderColor": "#66bb6a",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "hoverBg": "rgba(102,187,106,0.30)",
+            "hoverColor": "#fff",
+            "clickable": true
+          },
+          {
+            "tag": "icon",
+            "classes": [
+              "pb-entry-stop-btn"
+            ],
+            "icon": "manta:square",
+            "x": 100,
+            "y": 54,
+            "w": 14,
+            "h": 13,
+            "bg": "rgba(239,83,80,0.15)",
+            "color": "#ef5350",
+            "borderColor": "#ef5350",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "hoverBg": "rgba(239,83,80,0.30)",
+            "hoverColor": "#fff",
+            "clickable": true
+          },
+          {
+            "tag": "span",
+            "classes": [
+              "pb-media-info"
+            ],
+            "x": 26,
+            "y": 72,
+            "w": 140,
+            "h": 9,
+            "color": "#888888",
+            "textKey": "pb-media-info"
+          },
+          {
+            "tag": "div",
+            "classes": [
+              "pb-media-slot-frame"
+            ],
+            "x": 170,
+            "y": 55,
+            "w": 18,
+            "h": 18,
+            "bg": "rgba(0,0,0,0.55)",
+            "borderColor": "#666",
+            "borderWidth": 1,
+            "borderRadius": 1
+          },
+          {
+            "tag": "icon",
+            "classes": [
+              "pb-entry-del-btn"
+            ],
+            "icon": "manta:trash-2",
+            "x": 194,
+            "y": 57,
+            "w": 18,
+            "h": 14,
+            "bg": "rgba(239,83,80,0.15)",
+            "color": "#ef5350",
+            "borderColor": "#ef5350",
+            "borderWidth": 1,
+            "borderRadius": 2,
+            "textAlign": "center",
+            "hoverBg": "rgba(239,83,80,0.30)",
+            "hoverColor": "#fff",
+            "clickable": true
+          }
+        ]
+      }
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-playing-frame"
+      ],
+      "x": 10,
+      "y": 52,
+      "w": 214,
+      "h": 33,
+      "bg": "rgba(79,195,247,0.06)",
+      "borderColor": "#4fc3f7",
+      "borderWidth": 2,
+      "borderRadius": 2,
+      "bgKey": "pb-playing-frame-bg",
+      "borderColorKey": "pb-playing-frame-border",
+      "dynamicY": "pb-playing-frame-y",
+      "transitionKey": "pb-playing-frame-move",
+      "visibleKey": "pb-playing-frame-visible"
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-sched-scrollbar",
+        "scrollbar-track"
+      ],
+      "x": 226,
+      "y": 50,
+      "w": 6,
+      "h": 212,
+      "bg": "rgba(0,0,0,0.3)",
+      "borderColor": "#444",
+      "borderWidth": 1,
+      "borderRadius": 3,
+      "visibleKey": "pb-sched-scrollbar",
+      "children": [
+        {
+          "tag": "div",
+          "classes": [
+            "pb-sched-thumb",
+            "scrollbar-thumb"
+          ],
+          "x": 227,
+          "y": 51,
+          "w": 4,
+          "h": 20,
+          "bg": "#ffc107",
+          "borderRadius": 2,
+          "visibleKey": "pb-sched-scrollbar",
+          "dynamicY": "pb-sched-thumb-y",
+          "transitionKey": "toggle-knob"
+        }
+      ]
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-schedplay-track"
+      ],
+      "x": 208,
+      "y": 33,
+      "w": 24,
+      "h": 12,
+      "bg": "#555",
+      "borderRadius": 6,
+      "bgKey": "pb-schedplay-track-bg",
+      "clickable": true,
+      "transitionKey": "toggle-bg"
+    },
+    {
+      "tag": "div",
+      "classes": [
+        "pb-schedplay-knob"
+      ],
+      "x": 210,
+      "y": 35,
+      "w": 8,
+      "h": 8,
+      "bg": "#aaa",
+      "borderRadius": 4,
+      "bgKey": "pb-schedplay-knob-bg",
+      "dynamicX": "pb-schedplay-knob-x",
+      "transitionKey": "toggle-knob"
+    }
+  ]
+}

@@ -73,7 +73,7 @@ public final class PlaybackScheduler {
     public static void testEntry(ServerLevel level, BlockPos pos, int idx) {
         if (!(level.getBlockEntity(pos) instanceof PlaybackDeviceBlockEntity be)) return;
         if (idx < 0 || idx >= be.getEntryCount()) return;
-        if (be.playMedia(be.getPlaylist().getStackInSlot(idx))) {
+        if (be.playMedia(be.getPlaylist().getStackInSlot(idx), false, idx)) {
             Seq s = new Seq(pos, level.dimension());
             s.entryIdx = idx;
             s.playing = true;
@@ -87,8 +87,10 @@ public final class PlaybackScheduler {
     public static void stop(ServerLevel level, BlockPos pos) {
         sequences.remove(key(level.dimension(), pos));
         if (level.getBlockEntity(pos) instanceof PlaybackDeviceBlockEntity be) {
-            be.setPlayingEntry(-1);
+            // Stop first: the stop event names the entry that was playing, and clearing the
+            // index before it would report every scheduled stop as the single medium's.
             be.stopPlayback();
+            be.setPlayingEntry(-1);
         }
     }
 
@@ -114,7 +116,7 @@ public final class PlaybackScheduler {
         ItemStack media = be.getPlaylist().getStackInSlot(s.entryIdx);
         boolean loop = be.isLoopEntry(s.entryIdx);
 
-        if (!be.playMedia(media, loop)) {
+        if (!be.playMedia(media, loop, s.entryIdx)) {
             s.entryIdx++;
             advance(level, s);
             return;

@@ -91,7 +91,9 @@ public record PlaylistCommandPayload(BlockPos pos, int op, int a1, int a2) imple
                     }
                 }
                 case OP_REORDER -> be.swapEntries(payload.a1, payload.a2);
-                case OP_TOGGLE_MODE -> be.toggleScheduleMode();
+                case OP_TOGGLE_MODE -> be.toggleScheduleMode(media -> {
+                    if (!player.getInventory().add(media)) player.drop(media, false);
+                });
                 case OP_TOGGLE_LOOP -> be.toggleNormalLoop();
                 default -> { }
             }

@@ -53,7 +53,7 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
         addPlayerInventory(playerInventory);
         addPlayerHotbar(playerInventory);
 
-        // Playlist media slots (menu 38..43) — off-screen until the schedule popup positions them.
+        // Playlist media slots (menu 38..53) — off-screen until the schedule popup positions them.
         ItemStackHandler playlist = blockEntity.getPlaylist();
         for (int i = 0; i < PlaybackDeviceBlockEntity.PLAYLIST_SIZE; i++) {
             final int entry = i;

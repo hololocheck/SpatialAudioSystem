@@ -67,7 +67,7 @@ class PlaybackLoopTest {
 
     /** A device with {@code entries} rows, every count at 1, nothing armed. */
     private static PlaybackDeviceBlockEntity device(int entries) {
-        PlaybackDeviceBlockEntity d = new ObjenesisStd().newInstance(PlaybackDeviceBlockEntity.class);
+        PlaybackDeviceBlockEntity d = com.spatialaudiosystem.blockentity.TestDevices.newBare();
         int[] counts = new int[PlaybackDeviceBlockEntity.PLAYLIST_SIZE];
         Arrays.fill(counts, 1);
         set(d, "playCounts", counts);
@@ -243,7 +243,7 @@ class PlaybackLoopTest {
         // Zero is both a valid entry index and the JVM's default, so a device whose fields never
         // ran their initialisers reads as "looping entry 0". It must not be armed, and asking
         // must not throw on the counts array that is also still null.
-        PlaybackDeviceBlockEntity bare = new ObjenesisStd().newInstance(PlaybackDeviceBlockEntity.class);
+        PlaybackDeviceBlockEntity bare = com.spatialaudiosystem.blockentity.TestDevices.newBare();
 
         assertThat(call(bare, "isLoopArmed", new Class<?>[]{})).isEqualTo(false);
     }
