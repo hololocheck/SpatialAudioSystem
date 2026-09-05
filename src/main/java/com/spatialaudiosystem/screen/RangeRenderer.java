@@ -64,8 +64,35 @@ public class RangeRenderer {
             renderRangeBoardOutline(offHand, event.getPoseStack(), camera, bufferSource, hudMode, true);
         }
 
-        // Reset smooth state when not holding a range board
-        if (!mainHasBoard && !offHasBoard) {
+        // The sound handy's range mode (Shift+R): the targeted device's board, drawn as the board
+        // is in the hand (corner preview follows the look target) under the board's view mode.
+        BlockPos handyTarget = null;
+        ItemStack handy = com.manta.api.hud.HeldTools.find(mc.player, ModItems.SOUND_HANDY.get());
+        if (!handy.isEmpty() && com.spatialaudiosystem.item.SoundHandyItem.rangeMode(handy)) {
+            net.minecraft.core.GlobalPos target = handy.get(ModDataComponents.HANDY_SELECTED_DEVICE);
+            if (target != null && target.dimension().equals(level.dimension())
+                    && level.getBlockEntity(target.pos()) instanceof PlaybackDeviceBlockEntity targetBE) {
+                handyTarget = target.pos();
+                ItemStack board = targetBE.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.RANGE_SLOT);
+                if (board.is(ModItems.RANGE_BOARD.get())) {
+                    renderRangeBoardOutline(board, event.getPoseStack(), camera, bufferSource, hudMode, true);
+                }
+            }
+        }
+        // Shift+H: the targeted device's block, outlined through terrain, so "which one is the
+        // target" survives walls and distance (user's real-device note 2026-09-05). The handy's
+        // own accent, whatever the range mode; the box is drawn even for an unloaded chunk,
+        // because the position is on the handy and that is what the player is looking for.
+        if (!handy.isEmpty() && com.spatialaudiosystem.item.SoundHandyItem.highlightMode(handy)) {
+            net.minecraft.core.GlobalPos target = handy.get(ModDataComponents.HANDY_SELECTED_DEVICE);
+            if (target != null && target.dimension().equals(level.dimension())) {
+                AABB box = new AABB(target.pos()).inflate(0.02).move(-camera.x, -camera.y, -camera.z);
+                com.manta.api.render.WorldOutline.box(event.getPoseStack(), bufferSource, box,
+                        0.31f, 0.76f, 0.97f, 0.9f, true);
+            }
+        }
+        // Reset smooth state when nothing follows the look target
+        if (!mainHasBoard && !offHasBoard && handyTarget == null) {
             smoothInitialized = false;
         }
 
@@ -79,7 +106,8 @@ public class RangeRenderer {
                 LevelChunk chunk = level.getChunkSource().getChunkNow(playerChunkX + cx, playerChunkZ + cz);
                 if (chunk != null) {
                     for (BlockEntity be : chunk.getBlockEntities().values()) {
-                        if (be instanceof PlaybackDeviceBlockEntity playbackBE && playbackBE.isShowRange()) {
+                        if (be instanceof PlaybackDeviceBlockEntity playbackBE && playbackBE.isShowRange()
+                                && !playbackBE.getBlockPos().equals(handyTarget)) {
                             ItemStack rangeStack = playbackBE.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.RANGE_SLOT);
                             // For device-slot boards: show attenuation box if device has attenuationMode on
                             int deviceMode = playbackBE.isAttenuationMode() ? 1 : 0;

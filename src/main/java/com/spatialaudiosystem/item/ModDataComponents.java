@@ -80,6 +80,34 @@ public class ModDataComponents {
                     .build());
 
     // 6 per-direction attenuation ranges: [East(+X), West(-X), Up(+Y), Down(-Y), South(+Z), North(-Z)]
+    /** The sound handy's range mode (Shift+R) is on: right-clicks and Alt/Ctrl+wheel edit the target's range board. */
+    public static final Supplier<DataComponentType<Boolean>> HANDY_RANGE_MODE = DATA_COMPONENTS.register("handy_range_mode",
+            () -> DataComponentType.<Boolean>builder()
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL)
+                    .build());
+
+    /** The sound handy's HUD badge is hidden for this handy; absent = shown (the default). */
+    public static final Supplier<DataComponentType<Boolean>> HANDY_HUD_HIDDEN = DATA_COMPONENTS.register("handy_hud_hidden",
+            () -> DataComponentType.<Boolean>builder()
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL)
+                    .build());
+
+    /** The sound handy's highlight (Shift+H) is on: the targeted device's block is outlined through terrain. */
+    public static final Supplier<DataComponentType<Boolean>> HANDY_HIGHLIGHT = DATA_COMPONENTS.register("handy_highlight",
+            () -> DataComponentType.<Boolean>builder()
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL)
+                    .build());
+
+    /** The device the sound handy targets (dimension + position); absent = nothing selected. */
+    public static final Supplier<DataComponentType<net.minecraft.core.GlobalPos>> HANDY_SELECTED_DEVICE = DATA_COMPONENTS.register("handy_selected_device",
+            () -> DataComponentType.<net.minecraft.core.GlobalPos>builder()
+                    .persistent(net.minecraft.core.GlobalPos.CODEC)
+                    .networkSynchronized(net.minecraft.core.GlobalPos.STREAM_CODEC)
+                    .build());
+
     public static final Supplier<DataComponentType<List<Integer>>> ATTENUATION_RANGES = DATA_COMPONENTS.register("attenuation_ranges",
             () -> DataComponentType.<List<Integer>>builder()
                     .persistent(Codec.INT.listOf())

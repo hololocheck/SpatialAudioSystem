@@ -167,8 +167,16 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     private java.util.UUID ownerUUID = null;   // first player to open this device
     private String ownerName = null;
     private boolean privateMode = false;       // private = owner only (OwnerAccess ring red)
+    /** The owner's name for the device (sound handy, 1.1.0); null = unnamed. Persisted; the client gets it through the update tag. */
+    private String deviceName = null;
 
     private boolean isPlaying = false;
+    /**
+     * What the sound handy's list last saw of this device (server tick; not persisted). Created
+     * on first use: test devices are built without initialisers (Objenesis), and the tick must
+     * not fall over a null that is nothing to do with what the test drives.
+     */
+    private com.spatialaudiosystem.handy.RowChangeDetector handyRow;
     private boolean showRange = false;
     private boolean attenuationMode = true;
     /** Playback range without a range board, in blocks. See SpatialGain.JUKEBOX_RANGE_BLOCKS. */
@@ -208,13 +216,36 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
 
     @Override
     public Component getDisplayName() {
-        return Component.translatable("block.spatialaudiosystem.playback_device");
+        // A named device is titled by its name (sound handy, 1.1.0); the block's name otherwise.
+        return deviceName != null ? Component.literal(deviceName)
+                : Component.translatable("block.spatialaudiosystem.playback_device");
+    }
+
+    @org.jetbrains.annotations.Nullable
+    public String getDeviceName() {
+        return deviceName;
+    }
+
+    /** The range board in the range slot was edited in place (sound handy): persist and resend. */
+    public void markRangeBoardEdited() {
+        markUpdated();
+    }
+
+    /** Sets the owner's name for this device (null = unnamed) and keeps the handy registry in step. */
+    public void setDeviceName(@org.jetbrains.annotations.Nullable String name) {
+        String clean = com.spatialaudiosystem.handy.SoundDeviceRegistry.sanitizeName(name);
+        if (java.util.Objects.equals(clean, deviceName)) return;
+        deviceName = clean;
+        markUpdated();
+        com.spatialaudiosystem.handy.SoundDeviceLink.onRenamed(this);
     }
 
     @Nullable
     @Override
     public AbstractContainerMenu createMenu(int containerId, Inventory playerInventory, Player player) {
         if (!claimAndAllow(player)) return null;   // private device: owner only
+        // A pre-1.1.0 device settles its owner at this first open: list it for the handy.
+        com.spatialaudiosystem.handy.SoundDeviceLink.onOwnerKnown(this);
         return new PlaybackDeviceMenu(containerId, playerInventory, this);
     }
 
@@ -400,6 +431,25 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         setChanged();
         if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), 3);
+        }
+    }
+
+    /**
+     * A device that just loaded: the owner's handy list said "not loaded" for it, and the tick's
+     * change detector starts silent, so the load itself is announced here. Chunks that load with
+     * nobody online cost nothing (the push finds no player).
+     */
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (level != null && !level.isClientSide() && getOwnerUUID() != null) {
+            // The state pushed here is also the detector's baseline. Without that, a device
+            // saved as playing is pushed as playing, the first tick's reconcile stops it, and
+            // the stopped state becomes the silent first signature - never pushed (review
+            // 2026-09-05). Primed here, that stop is a change and goes out.
+            if (handyRow == null) handyRow = new com.spatialaudiosystem.handy.RowChangeDetector();
+            handyRow.offer(com.spatialaudiosystem.handy.SoundDeviceLink.rowSignature(this));
+            com.spatialaudiosystem.handy.SoundDeviceLink.onStateChanged(this);
         }
     }
 
@@ -893,6 +943,19 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         }
         entity.refreshRedstoneOutput();
 
+        // The sound handy's list shows this device's playing / medium / board state, and the
+        // paths that change them - a sound reaching its end, a medium taken out, a board slotted -
+        // are not handy actions, so nothing else re-sends the list (real-device note 2026-09-05:
+        // the mini HUD stayed "playing" after the sound ended). One comparison per tick covers
+        // every path, including the ones added later. Only a device with an owner is in
+        // anyone's list, so an unclaimed one (or a bare test device) is not looked into.
+        if (entity.getOwnerUUID() != null) {
+            if (entity.handyRow == null) entity.handyRow = new com.spatialaudiosystem.handy.RowChangeDetector();
+            if (entity.handyRow.offer(com.spatialaudiosystem.handy.SoundDeviceLink.rowSignature(entity))) {
+                com.spatialaudiosystem.handy.SoundDeviceLink.onStateChanged(entity);
+            }
+        }
+
         if (entity.isLoopArmed() || entity.isNormalLoopArmed()) {
             // Only the loop branch needs the server level; the timeout below does not, and
             // narrowing the whole method to it would change a path this is not about.
@@ -976,6 +1039,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
             if (ownerName != null) tag.putString("OwnerName", ownerName);
         }
         tag.putBoolean("PrivateMode", privateMode);
+        if (deviceName != null) tag.putString("DeviceName", deviceName);
     }
 
     private void loadPlayCounts(CompoundTag tag) {
@@ -1048,6 +1112,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
             ownerUUID = null;
         }
         privateMode = tag.getBoolean("PrivateMode");
+        deviceName = tag.contains("DeviceName") ? com.spatialaudiosystem.handy.SoundDeviceRegistry.sanitizeName(tag.getString("DeviceName")) : null;
         showRange = tag.getBoolean("showRange");
         isPlaying = tag.getBoolean("isPlaying");
         // Missing key (legacy data) means the default ON, not false — same rule as TSU's config.
@@ -1105,6 +1170,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         tag.putInt("playingEntry", playingEntry);         // client: playing-frame highlight
         if (ownerUUID != null) tag.putUUID("OwnerUUID", ownerUUID);   // client: owner face
         tag.putBoolean("PrivateMode", privateMode);                   // client: ring colour
+        if (deviceName != null) tag.putString("DeviceName", deviceName);   // client: title, handy list
         // Serialize inventory without AUDIO_DATA (too large for network NBT).
         // createLiteStack copies all components except the legacy bulk data.
         ItemStackHandler liteInventory = new ItemStackHandler(SLOT_COUNT);

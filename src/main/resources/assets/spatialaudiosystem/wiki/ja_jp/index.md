@@ -18,6 +18,7 @@ tags: [overview, audio]
 | 記録媒体 | 音声を保持するアイテム。再生装置に入れて鳴らす |
 | [再生装置](playback-device.md) | 記録媒体を鳴らすブロック。単体再生と [♪スケジュール](playback-device/schedule.md) による連続再生 |
 | [範囲指定ボード](tools/range-board.md) | 音が聞こえる範囲と減衰を決めるアイテム |
+| [サウンドハンディ](tools/sound-handy.md) | 自分の再生装置を離れた場所から扱うアイテム |
 
 ## 基本の流れ
 
@@ -43,3 +44,4 @@ tags: [overview, audio]
 - [記憶装置](memory-device.md)
 - [再生装置](playback-device.md)
 - [範囲指定ボード](tools/range-board.md)
+- [サウンドハンディ](tools/sound-handy.md)

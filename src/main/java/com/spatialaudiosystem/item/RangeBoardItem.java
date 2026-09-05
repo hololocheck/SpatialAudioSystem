@@ -99,7 +99,7 @@ public class RangeBoardItem extends Item {
         }
     }
 
-    private static BlockPos getLookTargetBlock(Player player, Level level) {
+    static BlockPos getLookTargetBlock(Player player, Level level) {
         Vec3 eye = player.getEyePosition(1.0f);
         Vec3 look = player.getLookAngle();
         Vec3 end = eye.add(look.scale(MAX_RANGE));

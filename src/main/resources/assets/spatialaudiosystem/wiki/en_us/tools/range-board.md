@@ -6,7 +6,7 @@ tags: [item, tool, audio]
 
 # Range Board
 
-The item that decides **where** a sound is audible and **how it fades**. Put a configured board into the [Playback Device](../playback-device.md)'s range slot.
+The item that decides **where** a sound is audible and **how it fades**. Put a configured board into the [Playback Device](playback-device.md)'s range slot.
 
 [[TOC]]
 
@@ -15,7 +15,7 @@ The item that decides **where** a sound is audible and **how it fades**. Put a c
 1. Hold it — a **HUD** appears at the bottom of the screen
 2. **Right-click** a block for the first corner, then another block for the second
 3. **Shift + right-click** clears the range
-4. Put the configured board into the [Playback Device](../playback-device.md)'s **range slot**
+4. Put the configured board into the [Playback Device](playback-device.md)'s **range slot**
 
 ## Controls
 
@@ -38,9 +38,9 @@ The item that decides **where** a sound is audible and **how it fades**. Put a c
 | Downward | Fade distance below the device |
 
 > [!TIP]
-> To see the area you defined, turn on **Show Range** on the [Playback Device](../playback-device.md).
+> To see the area you defined, turn on **Show Range** on the [Playback Device](playback-device.md).
 
 ## Related
 
-- [Playback Device](../playback-device.md)
-- [Memory Device](../memory-device.md)
+- [Playback Device](playback-device.md)
+- [Memory Device](memory-device.md)

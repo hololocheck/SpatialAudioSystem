@@ -6,7 +6,7 @@ tags: [item, tool, audio]
 
 # 範囲指定ボード
 
-音が聞こえる**範囲**と**減衰**を決めるアイテムです。設定したボードを [再生装置](../playback-device.md) の範囲スロットに入れて使います。
+音が聞こえる**範囲**と**減衰**を決めるアイテムです。設定したボードを [再生装置](playback-device.md) の範囲スロットに入れて使います。
 
 [[TOC]]
 
@@ -15,7 +15,7 @@ tags: [item, tool, audio]
 1. 手に持つと画面下部に **HUD** が出ます
 2. ブロックを**右クリック**して第 1 地点、別のブロックを右クリックして第 2 地点を指定
 3. **Shift + 右クリック**で範囲を解除
-4. 設定したボードを [再生装置](../playback-device.md) の**範囲スロット**へ入れる
+4. 設定したボードを [再生装置](playback-device.md) の**範囲スロット**へ入れる
 
 ## 操作
 
@@ -38,9 +38,9 @@ tags: [item, tool, audio]
 | 下向き設定 | 下方向の減衰距離を決める |
 
 > [!TIP]
-> 範囲を目で確認したいときは、[再生装置](../playback-device.md) の **Show Range トグル**を ON にしてください。
+> 範囲を目で確認したいときは、[再生装置](playback-device.md) の **Show Range トグル**を ON にしてください。
 
 ## 関連
 
-- [再生装置](../playback-device.md)
-- [記憶装置](../memory-device.md)
+- [再生装置](playback-device.md)
+- [記憶装置](memory-device.md)

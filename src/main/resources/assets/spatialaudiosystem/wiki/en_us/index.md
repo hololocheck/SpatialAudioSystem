@@ -18,6 +18,7 @@ A mod for playing **your own audio files** inside the world. You write audio ont
 | Recording Medium | The item that carries the audio; put it in a playback device to hear it |
 | [Playback Device](playback-device.md) | Plays a medium — one at a time, or several in order via the [♪ Schedule](playback-device/schedule.md) |
 | [Range Board](tools/range-board.md) | Defines where the sound is audible and how it fades |
+| [Sound Handy](tools/sound-handy.md) | Controls your playback devices from anywhere |
 
 ## The basic flow
 
@@ -43,3 +44,4 @@ The first player to open a device becomes its **owner**. Clicking the face icon 
 - [Memory Device](memory-device.md)
 - [Playback Device](playback-device.md)
 - [Range Board](tools/range-board.md)
+- [Sound Handy](tools/sound-handy.md)

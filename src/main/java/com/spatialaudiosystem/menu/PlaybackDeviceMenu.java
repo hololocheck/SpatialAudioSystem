@@ -19,6 +19,7 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
 
     private final PlaybackDeviceBlockEntity blockEntity;
     private final ContainerLevelAccess access;
+    private final boolean remote;
 
     // Client constructor
     public PlaybackDeviceMenu(int containerId, Inventory playerInventory, FriendlyByteBuf data) {
@@ -27,8 +28,19 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
 
     // Server constructor
     public PlaybackDeviceMenu(int containerId, Inventory playerInventory, PlaybackDeviceBlockEntity blockEntity) {
+        this(containerId, playerInventory, blockEntity, false);
+    }
+
+    /**
+     * Server constructor; {@code remote} = opened through the sound handy (spec §2.5), so
+     * {@link #stillValid} asks whether the handy is still in hand and the player still owns the
+     * device, not how far away the block is. The client never reads the flag: only the
+     * server closes a menu on validity.
+     */
+    public PlaybackDeviceMenu(int containerId, Inventory playerInventory, PlaybackDeviceBlockEntity blockEntity, boolean remote) {
         super(ModMenuTypes.PLAYBACK_DEVICE_MENU.get(), containerId);
         this.blockEntity = blockEntity;
+        this.remote = remote;
         this.access = ContainerLevelAccess.create(blockEntity.getLevel(), blockEntity.getBlockPos());
 
         ItemStackHandler handler = blockEntity.getInventory();
@@ -127,8 +139,21 @@ public class PlaybackDeviceMenu extends AbstractContainerMenu {
         return quickMoveStack;
     }
 
+    /**
+     * The remote rule (spec §2.5) on its own, so the mutation ledger can break it: the device
+     * is still there, the handy is still in hand, and the player is the owner.
+     */
+    static boolean remoteStillValid(boolean removed, boolean holdingHandy, java.util.UUID player, java.util.UUID owner) {
+        return !removed && holdingHandy && player != null && player.equals(owner);
+    }
+
     @Override
     public boolean stillValid(Player player) {
+        if (remote) {
+            return remoteStillValid(blockEntity.isRemoved(),
+                    !com.spatialaudiosystem.item.SoundHandyItem.held(player).isEmpty(),
+                    player.getUUID(), blockEntity.getOwnerUUID());
+        }
         return stillValid(this.access, player, com.spatialaudiosystem.block.ModBlocks.PLAYBACK_DEVICE.get());
     }
 

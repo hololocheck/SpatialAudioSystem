@@ -16,9 +16,10 @@ through the BelugaExperience design workflow on top of the Manta UI runtime.
 
 - **Play your own audio** — mp3 / ogg / wav from your PC, up to 10 MB per file
 - **3D range control** — the Range Board defines a box where the sound is audible, with per-direction fade-out
-- **♪ Schedule** — queue up to 6 media and play them in order, each repeating 1–10 times or **∞** for continuous ambience
+- **Sound Handy** — a remote for your own Playback Devices: target one, play / stop it, edit its range board and outline it through blocks from where you stand, with a mini HUD naming the target and the medium it holds
+- **♪ Schedule** — queue up to 16 media and play them in order, each repeating 1–10 times or **∞** for continuous ambience
 - **Cover art** — artwork embedded in the audio file is shown on the device screens
-- **Redstone automation** — the Playback Device fires on a rising edge, for stations, cutscenes, and ambient triggers
+- **Redstone automation** — the Playback Device fires on a rising edge and emits its own signal from rules tied to playback (while playing, or a pulse on start / stop / end), for stations, cutscenes, and ambient triggers
 - **Access modes** — the first player to open a device becomes its owner; switch it between public and private
 - **Multiplayer-safe** — audio is stored on the server and streamed to each client, so there is no per-client desync
 - **Built-in wiki** — every screen documented in-game, with hover hints and F1 (EN / JA)
@@ -30,7 +31,7 @@ through the BelugaExperience design workflow on top of the Manta UI runtime.
 |---|---|
 | Minecraft | 1.21.1 |
 | NeoForge | 21.1.220+ |
-| **Manta** | 2.0.0 — bundled in the jar, no separate download |
+| **Manta** | 2.5.0 — bundled in the jar, no separate download |
 
 ### Open source
 
@@ -54,9 +55,10 @@ mp3 / ogg / wav を記憶装置で記録媒体に書き込み、再生装置で�
 
 - **自分の音声を再生** — PC 内の mp3 / ogg / wav を、1 ファイル最大 10 MB まで
 - **3D 範囲制御** — 範囲指定ボードで音の聞こえる箱を定義し、方向ごとにフェードアウト
-- **♪ スケジュール** — 最大 6 件の媒体を並べて順番に再生。各エントリ 1〜10 回
+- **サウンドハンディ** — 自分の再生装置のリモコン。対象を選んで再生 / 停止、その場から範囲指定ボードを編集、ブロック越しに枠を表示。ミニ HUD に対象の名前と記録媒体
+- **♪ スケジュール** — 最大 16 件の媒体を並べて順番に再生。各エントリ 1〜10 回または **∞**
 - **ジャケット表示** — 音声ファイルに埋め込まれたアートワークをデバイス画面に表示
-- **レッドストーン自動化** — 立ち上がり信号で再生。駅放送・カットシーン・環境音トリガに
+- **レッドストーン自動化** — 立ち上がり信号で再生。再生に連動した出力（再生中 / 開始・停止・終了時のパルス）をルールで設定。駅放送・カットシーン・環境音トリガに
 - **アクセスモード** — 最初に開いたプレイヤーが所有者。公開 / 非公開を切り替え可能
 - **マルチプレイ安全** — 音声はサーバー側に保存して各クライアントへ配信するため desync なし
 - **内蔵 wiki** — 全画面をゲーム内で解説。ホバーヒントと F1 対応（英/日）
@@ -68,7 +70,7 @@ mp3 / ogg / wav を記憶装置で記録媒体に書き込み、再生装置で�
 |---|---|
 | Minecraft | 1.21.1 |
 | NeoForge | 21.1.220+ |
-| **Manta** | 2.0.0 — jar に同梱、別途ダウンロード不要 |
+| **Manta** | 2.5.0 — jar に同梱、別途ダウンロード不要 |
 
 ### オープンソース
 

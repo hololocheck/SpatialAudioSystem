@@ -123,6 +123,30 @@ PCのローカルファイルから音声を記録媒体に書き込むブロッ
 
 ---
 
+#### 📱 サウンドハンディ（アイテム）
+自分の再生装置を離れた場所から操作するリモコンです。
+
+| 項目 | 詳細 |
+|------|------|
+| 対象 | 自分が所有者の再生装置 |
+| 画面 | 右下の小さなパネル: 装置の一覧と、行をクリックで開く装置ページ |
+
+**操作方法:**
+| 操作 | 動作 |
+|------|------|
+| 右クリック（再生装置） | その装置を対象にする |
+| 右クリック（それ以外） | ハンディ画面を開く |
+| Shift + マウスホイール | 対象を順に切り替え |
+| 中ボタン | 対象を再生 / 停止 |
+| Shift + R | 対象の範囲指定ボードをその場で表示・編集 |
+| Shift + H | 対象の枠をブロック越しに表示 |
+
+**HUD表示:**
+- 手に持つと左下にミニ HUD: 対象の名前・記録媒体（形式ごとの色）・状態・範囲・ハイライトの ON/OFF
+- 対象を切り替えると行がスライド
+
+---
+
 ### 🔧 ビルド方法
 
 ```bash
@@ -234,6 +258,30 @@ A tool for defining the 3D audible range by specifying two corner points.
 - Pos2 smoothly follows crosshair when only Pos1 is set
 - Alt key expands attenuation settings panel
 - Notification messages appear below item name (no action bar overlap)
+
+---
+
+#### 📱 Sound Handy (Item)
+A remote for operating your own Playback Devices from a distance.
+
+| Spec | Detail |
+|------|--------|
+| Targets | Playback Devices you own |
+| Screen | A small panel in the bottom-right: the list of your devices, and a device page opened by clicking a row |
+
+**Controls:**
+| Input | Action |
+|-------|--------|
+| Right-click (Playback Device) | Target that device |
+| Right-click (elsewhere) | Open the handy screen |
+| Shift + Mouse Wheel | Switch the target |
+| Middle button | Play / stop the target |
+| Shift + R | Show and edit the target's range board from where you stand |
+| Shift + H | Outline the target through blocks |
+
+**HUD Display:**
+- Mini HUD in the bottom-left while held: the target's name, medium (coloured by format), state, range and highlight on/off
+- The rows slide when the target changes
 
 ---
 

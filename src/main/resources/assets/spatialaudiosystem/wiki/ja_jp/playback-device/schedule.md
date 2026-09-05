@@ -8,13 +8,13 @@ tags: [audio, playlist, playback]
 
 ![](bws:spatialaudiosystem:wiki/screens/playback-device-schedule__ja_jp.png)
 
-[再生装置](../playback-device.md) で**複数の記録媒体を順番に**鳴らすための編集画面です。再生装置の **♪スケジュール**ボタンで開きます。
+[再生装置](playback-device.md) で**複数の記録媒体を順番に**鳴らすための編集画面です。再生装置の **♪スケジュール**ボタンで開きます。
 
 [[TOC]]
 
 ## 開き方
 
-1. [再生装置](../playback-device.md) を右クリックして開く
+1. [再生装置](playback-device.md) を右クリックして開く
 2. **スケジュールトグルを ON** にする（通常のメディアスロットが ✕ になり、♪ボタンが押せるようになります）
 3. **♪スケジュール**ボタンをクリック → 本体の横にスケジュール画面が開く
 4. 開いているあいだもプレイヤーインベントリは操作できます（媒体をドラッグで入れられます）
@@ -52,6 +52,6 @@ tags: [audio, playlist, playback]
 
 ## 関連
 
-- [再生装置](../playback-device.md)
-- [記憶装置](../memory-device.md)
-- [範囲指定ボード](../tools/range-board.md)
+- [再生装置](playback-device.md)
+- [記憶装置](memory-device.md)
+- [範囲指定ボード](tools/range-board.md)

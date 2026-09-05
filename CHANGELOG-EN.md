@@ -2,16 +2,22 @@
 
 > Japanese version: [CHANGELOG.md](CHANGELOG.md)
 
-## [1.1.0] - 2026-09-02
+## [1.1.0] - 2026-09-05
 
 ### Changed
 
-- **Manta 2.2.2** (embedded Manta updated to 2.2.2, required range `[2.2.2,3)`; 2.2.0 draws UI text with Manta's own raster at the on-screen pixel size on whole pixels, and includes 2.1.2's bold fix).
+- **Manta 2.5.0** (embedded Manta updated to 2.5.0, required range `[2.5.0,3)`; 2.2.0 draws UI text with Manta's own raster at the on-screen pixel size on whole pixels, and 2.5.0 draws tooltips, HUDs and wiki pages the same way).
   Update the other BelugaLab mods (TSU 1.1.0 / ASC 1.2.0) at the same time: a build that embeds Manta 1.x requires `[1.1.74,2)`, and the two required ranges cannot both be satisfied by one Manta.
   Since Manta 2.1, on Windows the UI text is drawn with the system's own fonts (Yu Gothic, Microsoft YaHei, Segoe UI and others; nothing is redistributed) and stays sharp when scaled. `/manta font off` returns to the previous font.
 
 ### Added
 
+- **Sound Handy** (new item): a remote for your own Playback Devices. Right-click a device to target it; right-click elsewhere for the handy screen (a small panel in the bottom-right: the list of your devices, and a device page opened by clicking a row).
+  Shift + wheel walks through the devices, the middle button plays / stops the target, **Shift + R** shows and edits the target's range board from where you stand, **Shift + H** outlines the target through blocks.
+  A mini HUD in the bottom-left names the target, the medium it holds (an icon coloured by format, and the file name), its state, its range and whether the highlight is on; the rows slide when the target changes.
+  Test playback from the handy is heard by you alone, where you stand. Playing, stopping and range editing apply to the holder's own devices only.
+- **Device names**: name a Playback Device from its screen or from the handy. The name is kept in the device and shown in the handy's list and mini HUD.
+- **Wiki**: a Sound Handy page (English and Japanese; six pages in all).
 - **Every sound reaches a player who arrives late, from the sound's current position.**
   One-shots are now delivered on joining, on arriving from another dimension, and on walking into range, just like ∞ sounds.
   The listener starts at the position the sound has reached (their own download time is accounted for).

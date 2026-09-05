@@ -89,6 +89,18 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     private final com.manta.api.controller.ScrollViewport redstoneScroll =
             new com.manta.api.controller.ScrollViewport(() -> be().getRedstoneRules().size(), VISIBLE_ROWS)
                     .activeWhen(() -> showRedstone);
+    /** The device's name, edited in the title box (sound handy, 1.1.0); Enter saves, Esc cancels. */
+    private final com.manta.api.controller.TextInputController nameInput =
+            new com.manta.api.controller.TextInputController(
+                    com.spatialaudiosystem.handy.SoundDeviceRegistry.MAX_NAME_CODE_POINTS, "")
+                    .onSubmit(this::submitName)
+                    .onEscape(this::cancelName);
+    /**
+     * The sound handy screen this one was opened from, when it was: drawn behind this dialog
+     * and returned to on close, so opening a device never "closes" the handy (user's
+     * real-device note 2026-09-05). Escape closes this screen first, as the player expects.
+     */
+    private SoundHandyScreen handyBehind;
     // A list that grew scrolls to its new last row, so an add past the window is seen.
     private int lastEntryCount = -1;
     private int lastRuleCount = -1;
@@ -142,16 +154,56 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     public PlaybackDeviceScreenV2(PlaybackDeviceMenu menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
+        // Constructed before setScreen: the handy is still the current screen exactly when this
+        // one was opened from it, and only then does the handoff apply (a refused OPEN leaves a
+        // stale handoff that a device opened from the world must not adopt - review 2026-09-05).
+        Minecraft mc = Minecraft.getInstance();
+        this.handyBehind = SoundHandyScreen.takeBehindIf(mc.screen);
     }
 
     @Override
     protected void init() {
         super.init();
+        // The handoff was claimed in the constructor; a resize re-runs init and keeps the handy in step.
+        if (handyBehind != null) handyBehind.resize(this.minecraft, this.width, this.height);
         PlaybackDeviceBlockEntity be = this.menu.getBlockEntity();
         this.attenuationOn = be.isAttenuationMode();
         this.rangeVisible = be.isShowRange();
         this.scheduleModeOn = be.isScheduleMode();
         this.normalLoopOn = be.isNormalLoop();
+    }
+
+    /**
+     * The real close: the container closes as usual (the server learns the menu is gone), and
+     * when the handy opened us the player lands back on it instead of on the world.
+     */
+    @Override
+    protected void performClose() {
+        SoundHandyScreen back = handyBehind;
+        handyBehind = null;
+        super.performClose();
+        if (back != null && this.minecraft != null) this.minecraft.setScreen(back);
+    }
+
+    /**
+     * The handy panel drawn behind this dialog is chrome the layout knows nothing about, so JEI
+     * put its item list right over it (user's real-device note 2026-09-05). Declared here, JEI
+     * keeps clear of it for as long as the handy is behind.
+     *
+     * <p>Declared as the whole band from this dialog's right edge to the screen's edge at the
+     * handy's height, not just the panel: JEI crops its area to the larger free rectangle, and
+     * with the panel alone that was the gap between this dialog and the handy (round 5). With
+     * the band, the one free rectangle right of the dialog is the strip above the handy - where
+     * the list belongs.
+     */
+    @Override
+    public java.util.List<int[]> extraOccupiedAreas() {
+        if (handyBehind == null) return java.util.List.of();
+        int[] r = handyBehind.screenRect();
+        int left = Math.min(r[0], dialogLocalToScreenX(dialogW()));
+        int right = Math.max(r[0] + r[2], this.width);
+        int bottom = Math.max(r[1] + r[3], this.height);
+        return java.util.List.of(new int[] {left, r[1], right - left, bottom - r[1]});
     }
 
     @Override
@@ -276,8 +328,12 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         PlaybackDeviceBlockEntity be = be();
         for (String c : classes) {
             switch (c) {
-                case "pb-title":
-                    return this.title.getString();
+                case "pb-title": {
+                    if (nameInput.isFocused()) return nameInput.display();
+                    String name = be.getDeviceName();
+                    return name != null ? name
+                            : Component.translatable("gui.spatialaudiosystem.playback_name_placeholder").getString();
+                }
                 case "pb-status":
                     return be.isPlaying()
                             ? Component.translatable("gui.spatialaudiosystem.status_playing").getString()
@@ -382,6 +438,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     @Override
     public Integer getDynamicColor(String[] classes, String key, int defaultArgb) {
         switch (key) {
+            case "pb-title-border": return nameInput.isFocused() ? 0xFF4FC3F7 : defaultArgb;
             case "pb-status-color":
                 return be().isPlaying() ? COLOR_PLAYING : COLOR_STOPPED;
             case "pb-atten-track-bg": return attenuationToggle.trackBg();
@@ -527,6 +584,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         }
         for (String c : classes) {
             switch (c) {
+                case "pb-title": beginName(); return;
                 case "mc-popup-close": onClose(); return;
                 case "wiki-btn": {
                     String pid = wikiPageId();
@@ -659,6 +717,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        if (handyBehind != null) handyBehind.renderBehind(g, partialTick);
         followListSizes();
         if (showSchedule) positionScheduleSlots(); else hideScheduleSlots();
         super.render(g, mouseX, mouseY, partialTick);
@@ -863,6 +922,14 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     public void drawCanvas(GuiGraphics g, String[] classes, String key,
                            int x, int y, int w, int h, int mouseX, int mouseY) {
         switch (key) {
+            case "pb-title-caret" -> {
+                if (nameInput.isFocused()) {
+                    // value(), not display(): display() is the placeholder while empty, and
+                    // the caret belongs at the start then (real-device note 2026-09-05).
+                    com.manta.api.render.TextCaretRenderer.draw(
+                            g, this.font, nameInput.value(), x, y, w, h, 0xFF4FC3F7, nameInput);
+                }
+            }
             case "pb-jacket" -> drawJacket(g, x, y, w, h);
             case "pb-redstone-icon" -> drawRedstoneButtonIcon(g, x, y, w, h, mouseX, mouseY);
             case "owner-face" -> com.manta.api.hud.OwnerFacePainter.draw(
@@ -920,7 +987,39 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     }
 
     @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (nameInput.isFocused() && nameInput.charTyped(codePoint)) return true;
+        return super.charTyped(codePoint, modifiers);
+    }
+
+    /** Click on the title: edit the name in place (the current name is the starting text). */
+    private void beginName() {
+        String name = be().getDeviceName();
+        nameInput.setValue(name == null ? "" : name);
+        nameInput.focus();
+    }
+
+    private void submitName() {
+        PlaybackDeviceBlockEntity be = be();
+        if (be.getLevel() != null) {
+            PacketDistributor.sendToServer(new com.spatialaudiosystem.network.SetDeviceNamePayload(
+                    net.minecraft.core.GlobalPos.of(be.getLevel().dimension(), be.getBlockPos()), nameInput.value()));
+        }
+        nameInput.blur();
+    }
+
+    private void cancelName() {
+        nameInput.blur();
+    }
+
+    @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (nameInput.isFocused()) {
+            // Enter submits and Escape cancels inside the controller; every other key is the
+            // input's too (the inventory key must not close the screen mid-name).
+            nameInput.keyPressed(keyCode);
+            return true;
+        }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             if (showSchedule) { closeSchedule(); return true; }
             if (showRedstone) { closeRedstone(); return true; }

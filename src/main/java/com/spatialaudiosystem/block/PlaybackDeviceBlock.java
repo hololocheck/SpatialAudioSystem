@@ -133,6 +133,21 @@ public class PlaybackDeviceBlock extends BaseEntityBlock {
                 PlaybackDeviceBlockEntity::tick);
     }
 
+    /** The placer owns the device from the start (sound handy, 1.1.0); it is listed for them at once. */
+    @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state,
+                            @org.jetbrains.annotations.Nullable net.minecraft.world.entity.LivingEntity placer,
+                            net.minecraft.world.item.ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (level.isClientSide() || !(placer instanceof Player player)) return;
+        if (level.getBlockEntity(pos) instanceof PlaybackDeviceBlockEntity be && be.getOwnerUUID() == null) {
+            be.setOwner(player.getUUID(), player.getName().getString());
+            if (level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+                com.spatialaudiosystem.handy.SoundDeviceLink.onPlaced(serverLevel, pos, be);
+            }
+        }
+    }
+
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean isMoving) {
         if (state.getBlock() != newState.getBlock()) {
@@ -140,6 +155,9 @@ public class PlaybackDeviceBlock extends BaseEntityBlock {
             if (blockEntity instanceof PlaybackDeviceBlockEntity entity) {
                 entity.drops();
                 entity.stopPlayback();
+            }
+            if (level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+                com.spatialaudiosystem.handy.SoundDeviceLink.onRemoved(serverLevel, pos);
             }
         }
         super.onRemove(state, level, pos, newState, isMoving);

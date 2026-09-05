@@ -17,7 +17,8 @@ public class ModNetworking {
         //     and catchup_report added. Bumped so a client on the old shape is refused at
         //     login instead of reading the new fields as garbage -- which is the exact shape
         //     of a late joiner ignoring its offset (2026-09-02).
-        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.5");
+        // 1.6 the sound handy: handy_action / set_device_name (C2S) and handy_device_list (S2C).
+        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.6");
 
         registrar.playToServer(
                 AudioUploadStartPayload.TYPE,
@@ -100,6 +101,26 @@ public class ModNetworking {
                 SetRangeBoardDataPayload.TYPE,
                 SetRangeBoardDataPayload.STREAM_CODEC,
                 SetRangeBoardDataPayload::handle
+        );
+        registrar.playToServer(
+                HandyActionPayload.TYPE,
+                HandyActionPayload.STREAM_CODEC,
+                HandyActionPayload::handle
+        );
+        registrar.playToServer(
+                SetDeviceNamePayload.TYPE,
+                SetDeviceNamePayload.STREAM_CODEC,
+                SetDeviceNamePayload::handle
+        );
+        registrar.playToServer(
+                HandyRangeEditPayload.TYPE,
+                HandyRangeEditPayload.STREAM_CODEC,
+                HandyRangeEditPayload::handle
+        );
+        registrar.playToClient(
+                HandyDeviceListPayload.TYPE,
+                HandyDeviceListPayload.STREAM_CODEC,
+                HandyDeviceListPayload::handle
         );
 
         registrar.playToClient(

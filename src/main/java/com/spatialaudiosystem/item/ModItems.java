@@ -14,6 +14,8 @@ public class ModItems {
 
     public static final DeferredItem<Item> RANGE_BOARD = ITEMS.register("range_board",
             () -> new RangeBoardItem(new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<Item> SOUND_HANDY = ITEMS.register("sound_handy",
+            () -> new SoundHandyItem(new Item.Properties().stacksTo(1)));
 
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);

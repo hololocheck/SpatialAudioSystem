@@ -15,6 +15,7 @@ public final class SasScreenHints {
     private static final String WIKI_PLAYBACK = "playback-device";
     private static final String WIKI_SCHEDULE = "playback-device/schedule";
     private static final String WIKI_RANGE = "tools/range-board";
+    private static final String WIKI_HANDY = "tools/sound-handy";
 
     private SasScreenHints() {}
 
@@ -28,6 +29,25 @@ public final class SasScreenHints {
         registerMemoryDevice();
         registerPlaybackDevice();
         registerSchedule();
+        registerSoundHandy();
+    }
+
+    private static void registerSoundHandy() {
+        HintRegistry.register("hd-row", "sas.hint.hd_row", WIKI_HANDY);
+        HintRegistry.register("hd-dev-name-box", "sas.hint.hd_name", WIKI_HANDY);
+        HintRegistry.register("hd-dev-play", "sas.hint.hd_play", WIKI_HANDY);
+        HintRegistry.register("hd-dev-stop", "sas.hint.hd_stop", WIKI_HANDY);
+        HintRegistry.register("hd-dev-test", "sas.hint.hd_test", WIKI_HANDY);
+        HintRegistry.register("hd-dev-test-stop", "sas.hint.hd_test_stop", WIKI_HANDY);
+        HintRegistry.register("hd-dev-open", "sas.hint.hd_open", WIKI_HANDY);
+        HintRegistry.register("hd-hud-track", "sas.hint.hd_hud", WIKI_HANDY);
+        HintRegistry.register("hd-hud-knob", "sas.hint.hd_hud", WIKI_HANDY);
+        HintRegistry.register("hd-layout-track", "sas.hint.hd_layout", WIKI_HANDY);
+        HintRegistry.register("hd-layout-knob", "sas.hint.hd_layout", WIKI_HANDY);
+        HintRegistry.register("hd-layout-reset", "sas.hint.hd_layout_reset", WIKI_HANDY);
+        HintRegistry.register("hd-nav-list", "sas.hint.hd_nav_list", WIKI_HANDY);
+        HintRegistry.register("hd-dev-back", "sas.hint.hd_back", WIKI_HANDY);
+        HintRegistry.register("hd-nav-settings", "sas.hint.hd_nav_settings", WIKI_HANDY);
     }
 
     private static void registerCommon() {
@@ -57,6 +77,7 @@ public final class SasScreenHints {
     }
 
     private static void registerPlaybackDevice() {
+        HintRegistry.register("pb-title", "sas.hint.pb_name", WIKI_PLAYBACK);
         HintRegistry.register("pb-jacket", "sas.hint.pb_jacket", WIKI_PLAYBACK);
         HintRegistry.register("pb-status", "sas.hint.pb_status", WIKI_PLAYBACK);
         HintRegistry.register("pb-file", "sas.hint.pb_file", WIKI_PLAYBACK);

@@ -8,13 +8,13 @@ tags: [audio, playlist, playback]
 
 ![](bws:spatialaudiosystem:wiki/screens/playback-device-schedule__en_us.png)
 
-The editor for playing **several media in order** from a [Playback Device](../playback-device.md). Open it with the device's **♪ Schedule** button.
+The editor for playing **several media in order** from a [Playback Device](playback-device.md). Open it with the device's **♪ Schedule** button.
 
 [[TOC]]
 
 ## How to open
 
-1. Right-click the [Playback Device](../playback-device.md) to open it
+1. Right-click the [Playback Device](playback-device.md) to open it
 2. Turn the **schedule toggle on** — the media slot gets a ✕ and the ♪ button arms
 3. Click **♪ Schedule** — the schedule opens beside the main screen
 4. Your inventory stays reachable while it is open, so you can drag media straight into the rows
@@ -52,6 +52,6 @@ The row currently sounding is **outlined**, and the outline moves along as the s
 
 ## Related
 
-- [Playback Device](../playback-device.md)
-- [Memory Device](../memory-device.md)
-- [Range Board](../tools/range-board.md)
+- [Playback Device](playback-device.md)
+- [Memory Device](memory-device.md)
+- [Range Board](tools/range-board.md)

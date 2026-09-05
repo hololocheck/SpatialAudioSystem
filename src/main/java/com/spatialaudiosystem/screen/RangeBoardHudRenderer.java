@@ -60,7 +60,11 @@ public class RangeBoardHudRenderer {
         if (mc.player == null || mc.options.hideGui) return;   // R2.3.1
         if (mc.screen != null) return;                          // R2.3.2
 
+        // The board in the hand - or, in the sound handy's range mode (Shift+R), the board inside
+        // the targeted device: the same badge and the same values, because the same edits apply
+        // (user's real-device note 2026-09-05). The mini HUD is drawn by its own renderer.
         ItemStack stack = HeldTools.find(mc.player, ModItems.RANGE_BOARD.get());
+        if (stack.isEmpty()) stack = handyTargetBoard(mc);
         boolean held = !stack.isEmpty();
         anim.update(held);                                      // R2.3.3
         if (!anim.shouldRender()) return;                       // R2.3.4
@@ -98,6 +102,27 @@ public class RangeBoardHudRenderer {
         }
 
         HudChrome.popUiScale(g);
+    }
+
+    /**
+     * The range board inside the sound handy's targeted device while its range mode is on, read
+     * from the client's copy of the block entity; empty when the handy is not held, the mode is
+     * off, the device is not here, or it holds no board.
+     */
+    private static ItemStack handyTargetBoard(Minecraft mc) {
+        ItemStack handy = HeldTools.find(mc.player, ModItems.SOUND_HANDY.get());
+        if (handy.isEmpty() || !com.spatialaudiosystem.item.SoundHandyItem.rangeMode(handy) || mc.level == null) {
+            return ItemStack.EMPTY;
+        }
+        net.minecraft.core.GlobalPos target = handy.get(ModDataComponents.HANDY_SELECTED_DEVICE);
+        if (target == null || !target.dimension().equals(mc.level.dimension())) return ItemStack.EMPTY;
+        if (!(mc.level.getBlockEntity(target.pos())
+                instanceof com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity be)) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack board = be.getInventory().getStackInSlot(
+                com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity.RANGE_SLOT);
+        return board.is(ModItems.RANGE_BOARD.get()) ? board : ItemStack.EMPTY;
     }
 
     private static void renderModeBadge(GuiGraphics g, Minecraft mc, int x, int y, float fade) {

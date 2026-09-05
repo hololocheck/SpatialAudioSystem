@@ -24,6 +24,7 @@ public class ModCreativeTabs {
                         output.accept(ModBlocks.RECORDING_DEVICE.get());
                         output.accept(ModItems.RECORDING_MEDIUM.get());
                         output.accept(ModItems.RANGE_BOARD.get());
+                        output.accept(ModItems.SOUND_HANDY.get());
                     })
                     .build());
 
