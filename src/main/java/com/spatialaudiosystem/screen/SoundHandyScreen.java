@@ -266,9 +266,9 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         return Math.min(1f, (System.nanoTime() - closingAtNano) / (float) SLIDE_NANOS);
     }
 
+    /** パネルのスライド。 二次 ease-out のまま (動きは変えず式だけ Manta の {@code Easing} へ)。 */
     private static float easeOut(float t) {
-        float inv = 1f - t;
-        return 1f - inv * inv;
+        return com.manta.api.anim.Easing.EASE_OUT.apply(t);
     }
 
     /** Close = slide down, then the real close; the base's scale+fade does not run (onClose is ours). */
@@ -435,11 +435,9 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         com.manta.api.text.MantaText.draw(g, mc.font, Component.translatable("gui.spatialaudiosystem.sound_handy.drag_panel").getString(), headerX, headerY - 11, ADJUST_ACCENT);
     }
 
+    /** 1px の角枠。 R4.2.2: 枠線だけを 4 本の fill で描かない (radius 0 なので見た目は同じ)。 */
     private static void outline(GuiGraphics g, int x, int y, int w, int h) {
-        g.fill(x, y, x + w, y + 1, ADJUST_ACCENT);
-        g.fill(x, y + h - 1, x + w, y + h, ADJUST_ACCENT);
-        g.fill(x, y, x + 1, y + h, ADJUST_ACCENT);
-        g.fill(x + w - 1, y, x + w, y + h, ADJUST_ACCENT);
+        com.manta.api.draw.SmoothRenderer.strokeRoundedRect(g, x, y, w, h, 0f, 1f, ADJUST_ACCENT);
     }
 
     // ---- what the screen reads ------------------------------------------------------------

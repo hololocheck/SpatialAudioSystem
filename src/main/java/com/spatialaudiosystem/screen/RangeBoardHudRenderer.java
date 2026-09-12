@@ -131,8 +131,8 @@ public class RangeBoardHudRenderer {
             case MODE_DOWNWARD -> 0xFFD54F;    // yellow
             default -> 0x4FC3F7;               // cyan (normal range)
         };
-        int bg = ((int) (0xE0 * fade) << 24) | 0x1a1a2e;
-        int border = ((int) (0xFF * fade) << 24) | accent;
+        int bg = com.manta.api.hud.HudChrome.fadeAlpha(0xE01a1a2e, fade);
+        int border = com.manta.api.hud.HudChrome.fadeAlpha(0xFF000000 | accent, fade);
         HudChrome.drawRoundedRect(g, x, y, BADGE_W, ROW_H, bg, border);
 
         String label = Component.translatable(switch (currentMode) {
@@ -140,7 +140,7 @@ public class RangeBoardHudRenderer {
             case MODE_DOWNWARD -> "hud.spatialaudiosystem.range_mode_downward";
             default -> "hud.spatialaudiosystem.range_mode_normal";
         }).getString();
-        int fg = ((int) (0xFF * fade) << 24) | accent;
+        int fg = com.manta.api.hud.HudChrome.fadeAlpha(0xFF000000 | accent, fade);
         HudChrome.drawCenteredLabel(g, mc.font, label, x, y, BADGE_W, ROW_H, fg);
     }
 

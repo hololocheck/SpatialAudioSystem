@@ -150,8 +150,8 @@ public final class SoundHandyHudRenderer {
     private static void drawPanel(GuiGraphics g, Minecraft mc, int x, int y, float fade, int accent, ItemStack stack,
                                   boolean rangeMode, boolean highlight, HandyDeviceListPayload.Row row,
                                   HandyDeviceListPayload.Row leaving, int dir, float progress) {
-        int bg = ((int) (0xE0 * fade) << 24) | 0x1a1a2e;
-        int border = ((int) (0xFF * fade) << 24) | accent;
+        int bg = com.manta.api.hud.HudChrome.fadeAlpha(0xE01a1a2e, fade);
+        int border = com.manta.api.hud.HudChrome.fadeAlpha(0xFF000000 | accent, fade);
         HudChrome.drawRoundedRect(g, x, y, PANEL_W, PANEL_H, bg, border);
         if (progress < 1f) {
             // The switch: the previous target's rows slide out and the new one's slide in, the

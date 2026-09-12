@@ -100,16 +100,8 @@ public class RangeBoardItem extends Item {
     }
 
     static BlockPos getLookTargetBlock(Player player, Level level) {
-        Vec3 eye = player.getEyePosition(1.0f);
-        Vec3 look = player.getLookAngle();
-        Vec3 end = eye.add(look.scale(MAX_RANGE));
-        BlockHitResult hitResult = level.clip(new ClipContext(
-                eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
-        if (hitResult.getType() == HitResult.Type.BLOCK) {
-            return hitResult.getBlockPos();
-        }
-        return null;
-    }
+    return com.manta.api.hud.LookTarget.blockPos(player, level, MAX_RANGE);
+}
 
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltipComponents, TooltipFlag tooltipFlag) {

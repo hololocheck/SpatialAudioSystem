@@ -1035,15 +1035,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+    /** 幅に収まるよう "…" で省略する。 実体は {@code HudText.ellipsize} (省略記号を 1 種類に保つ)。 */
     private String trimToFit(String text, int maxWidth) {
-        if (com.manta.api.text.MantaText.uiWidth(this.font, text) <= maxWidth) return text;
-        String ellipsis = "...";
-        int ew = com.manta.api.text.MantaText.uiWidth(this.font, ellipsis);
-        for (int i = text.length() - 1; i > 0; i--) {
-            if (com.manta.api.text.MantaText.uiWidth(this.font, text.substring(0, i)) + ew <= maxWidth) {
-                return text.substring(0, i) + ellipsis;
-            }
-        }
-        return ellipsis;
+        return com.manta.api.hud.HudText.ellipsize(this.font, text, maxWidth);
     }
 }

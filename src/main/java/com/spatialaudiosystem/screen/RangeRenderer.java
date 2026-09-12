@@ -31,12 +31,8 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 public class RangeRenderer {
 
     private static final double MAX_LOOK_DISTANCE = 64.0;
-    private static final float LERP_SPEED = 12.0f;
-
-    // Smooth interpolation state
-    private static double smoothX = 0, smoothY = 0, smoothZ = 0;
-    private static boolean smoothInitialized = false;
-    private static long lastNano = System.nanoTime();
+    /** 視線追従。 実体は Manta の {@code SmoothFollow} (この実装の抽出元そのもの)。 */
+    private static final com.manta.api.hud.SmoothFollow SMOOTH = new com.manta.api.hud.SmoothFollow();
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
@@ -93,7 +89,7 @@ public class RangeRenderer {
         }
         // Reset smooth state when nothing follows the look target
         if (!mainHasBoard && !offHasBoard && handyTarget == null) {
-            smoothInitialized = false;
+            SMOOTH.reset();
         }
 
         // Render range for playback devices with showRange enabled
@@ -132,7 +128,7 @@ public class RangeRenderer {
         if (inHand) {
             // Both unset: show 1-block preview at look target
             if (pos1 == null && pos2 == null) {
-                smoothInitialized = false;
+                SMOOTH.reset();
                 BlockPos lookTarget = getLookTargetPos();
                 if (lookTarget == null) return;
                 renderBox(poseStack, camera, bufferSource, lookTarget, lookTarget, 0.0f, 1.0f, 1.0f, 0.4f);
@@ -143,7 +139,7 @@ public class RangeRenderer {
             if (pos1 != null && pos2 == null) {
                 BlockPos lookTarget = getLookTargetPos();
                 if (lookTarget == null) return;
-                BlockPos smoothPos = updateSmooth(lookTarget);
+                BlockPos smoothPos = SMOOTH.update(lookTarget);
                 renderBox(poseStack, camera, bufferSource, pos1, smoothPos, 0.0f, 1.0f, 1.0f, 0.3f);
                 return;
             }
@@ -154,7 +150,7 @@ public class RangeRenderer {
         if (pos1 == null || pos2 == null) return;
 
         // Reset smooth state when both points are confirmed
-        if (inHand) smoothInitialized = false;
+        if (inHand) SMOOTH.reset();
 
         double minX = Math.min(pos1.getX(), pos2.getX());
         double minY = Math.min(pos1.getY(), pos2.getY());
@@ -164,11 +160,8 @@ public class RangeRenderer {
         double maxZ = Math.max(pos1.getZ(), pos2.getZ()) + 1;
 
         // Cyan range box (always shown)
-        AABB rangeAabb = new AABB(
-                minX - camera.x, minY - camera.y, minZ - camera.z,
-                maxX - camera.x, maxY - camera.y, maxZ - camera.z);
-        VertexConsumer consumer = bufferSource.getBuffer(RenderType.lines());
-        LevelRenderer.renderLineBox(poseStack, consumer, rangeAabb, 0.0f, 1.0f, 1.0f, 0.5f);
+        AABB rangeAabb = com.manta.api.render.WorldOutline.blockSpan(pos1, pos2, camera);
+        com.manta.api.render.WorldOutline.box(poseStack, bufferSource, rangeAabb, 0.0f, 1.0f, 1.0f, 0.5f, false);
 
         // Orange attenuation box: shown in mode 1 or mode 2,
         // or for device-slot boards with attenuation on (mode != 0)
@@ -187,68 +180,20 @@ public class RangeRenderer {
                 AABB attAabb = new AABB(
                         aMinX - camera.x, aMinY - camera.y, aMinZ - camera.z,
                         aMaxX - camera.x, aMaxY - camera.y, aMaxZ - camera.z);
-                LevelRenderer.renderLineBox(poseStack, consumer, attAabb, 1.0f, 0.55f, 0.0f, 0.5f);
+                com.manta.api.render.WorldOutline.box(poseStack, bufferSource, attAabb, 1.0f, 0.55f, 0.0f, 0.5f, false);
             }
         }
     }
 
-    private static BlockPos updateSmooth(BlockPos target) {
-        long now = System.nanoTime();
-        float dt = (now - lastNano) / 1_000_000_000f;
-        lastNano = now;
-        dt = Math.min(dt, 0.1f);
-
-        double targetX = target.getX();
-        double targetY = target.getY();
-        double targetZ = target.getZ();
-
-        if (!smoothInitialized) {
-            smoothX = targetX;
-            smoothY = targetY;
-            smoothZ = targetZ;
-            smoothInitialized = true;
-        } else {
-            float factor = 1.0f - (float) Math.exp(-LERP_SPEED * dt);
-            smoothX += (targetX - smoothX) * factor;
-            smoothY += (targetY - smoothY) * factor;
-            smoothZ += (targetZ - smoothZ) * factor;
-        }
-
-        return new BlockPos(
-                (int) Math.round(smoothX),
-                (int) Math.round(smoothY),
-                (int) Math.round(smoothZ));
-    }
-
+    /** 視線の先のブロック。 実体は {@code LookTarget.blockPos} (4 実装を 1 本へ)。 */
     private static BlockPos getLookTargetPos() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) return null;
-
-        Vec3 eye = mc.player.getEyePosition(1.0f);
-        Vec3 look = mc.player.getLookAngle();
-        Vec3 end = eye.add(look.scale(MAX_LOOK_DISTANCE));
-        BlockHitResult hitResult = mc.level.clip(new ClipContext(
-                eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, mc.player));
-        if (hitResult.getType() == HitResult.Type.BLOCK) {
-            return hitResult.getBlockPos();
-        }
-        return null;
+        return com.manta.api.hud.LookTarget.blockPos(mc.player, mc.level, MAX_LOOK_DISTANCE);
     }
 
+    /** 2 点が張る箱を camera 相対で描く。 実体は {@code WorldOutline.blockBox} (5 実装を 1 本へ)。 */
     private static void renderBox(PoseStack poseStack, Vec3 camera, MultiBufferSource bufferSource,
-                                   BlockPos p1, BlockPos p2, float r, float g, float b, float a) {
-        double minX = Math.min(p1.getX(), p2.getX());
-        double minY = Math.min(p1.getY(), p2.getY());
-        double minZ = Math.min(p1.getZ(), p2.getZ());
-        double maxX = Math.max(p1.getX(), p2.getX()) + 1;
-        double maxY = Math.max(p1.getY(), p2.getY()) + 1;
-        double maxZ = Math.max(p1.getZ(), p2.getZ()) + 1;
-
-        AABB aabb = new AABB(
-                minX - camera.x, minY - camera.y, minZ - camera.z,
-                maxX - camera.x, maxY - camera.y, maxZ - camera.z);
-
-        VertexConsumer consumer = bufferSource.getBuffer(RenderType.lines());
-        LevelRenderer.renderLineBox(poseStack, consumer, aabb, r, g, b, a);
+                                  BlockPos p1, BlockPos p2, float r, float g, float b, float a) {
+        com.manta.api.render.WorldOutline.blockBox(poseStack, bufferSource, p1, p2, camera, r, g, b, a, false);
     }
 }

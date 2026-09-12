@@ -59,7 +59,7 @@ public final class HandyTargetSwitch {
         long elapsed = now - startedAt;
         if (elapsed >= SLIDE_NANOS) return 1f;
         float t = Math.max(0f, elapsed / (float) SLIDE_NANOS);
-        float inv = 1f - t;
-        return 1f - inv * inv * inv;
+        // R2.7.1 の既定のカーブ。 展開した多項式を置かない。
+        return com.manta.api.anim.Easing.EASE_OUT_CUBIC.apply(t);
     }
 }
