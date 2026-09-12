@@ -1036,11 +1036,11 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     }
 
     private String trimToFit(String text, int maxWidth) {
-        if (this.font.width(text) <= maxWidth) return text;
+        if (com.manta.api.text.MantaText.uiWidth(this.font, text) <= maxWidth) return text;
         String ellipsis = "...";
-        int ew = this.font.width(ellipsis);
+        int ew = com.manta.api.text.MantaText.uiWidth(this.font, ellipsis);
         for (int i = text.length() - 1; i > 0; i--) {
-            if (this.font.width(text.substring(0, i)) + ew <= maxWidth) {
+            if (com.manta.api.text.MantaText.uiWidth(this.font, text.substring(0, i)) + ew <= maxWidth) {
                 return text.substring(0, i) + ellipsis;
             }
         }

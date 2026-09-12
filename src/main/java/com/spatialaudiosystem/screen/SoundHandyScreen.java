@@ -428,13 +428,11 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         int hudX = SoundHandyHudRenderer.restingX();
         int hudY = SoundHandyHudRenderer.restingY(this.height);
         outline(g, hudX - 1, hudY - 1, SoundHandyHudRenderer.PANEL_W + 2, SoundHandyHudRenderer.PANEL_H + 2);
-        g.drawString(mc.font, Component.translatable("gui.spatialaudiosystem.sound_handy.drag_hud").getString(),
-                hudX, hudY - 11, ADJUST_ACCENT, false);
+        com.manta.api.text.MantaText.draw(g, mc.font, Component.translatable("gui.spatialaudiosystem.sound_handy.drag_hud").getString(), hudX, hudY - 11, ADJUST_ACCENT);
         int headerX = dialogLocalToScreenX(0);
         int headerY = dialogLocalToScreenY(0);
         outline(g, headerX, headerY, dialogScaleAmount(PANEL_W), dialogScaleAmount(HEADER_H));
-        g.drawString(mc.font, Component.translatable("gui.spatialaudiosystem.sound_handy.drag_panel").getString(),
-                headerX, headerY - 11, ADJUST_ACCENT, false);
+        com.manta.api.text.MantaText.draw(g, mc.font, Component.translatable("gui.spatialaudiosystem.sound_handy.drag_panel").getString(), headerX, headerY - 11, ADJUST_ACCENT);
     }
 
     private static void outline(GuiGraphics g, int x, int y, int w, int h) {
