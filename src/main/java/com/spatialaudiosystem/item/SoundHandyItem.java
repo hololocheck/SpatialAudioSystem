@@ -47,10 +47,7 @@ public class SoundHandyItem extends Item {
 
     /** The handy the player holds, main hand first; empty when neither hand has one. */
     public static ItemStack held(Player player) {
-        ItemStack main = player.getMainHandItem();
-        if (main.is(ModItems.SOUND_HANDY.get())) return main;
-        ItemStack off = player.getOffhandItem();
-        return off.is(ModItems.SOUND_HANDY.get()) ? off : ItemStack.EMPTY;
+        return com.manta.api.hud.HeldTools.find(player, ModItems.SOUND_HANDY.get());
     }
 
     public static boolean rangeMode(ItemStack stack) {
