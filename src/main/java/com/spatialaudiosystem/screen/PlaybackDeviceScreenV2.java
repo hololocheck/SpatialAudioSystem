@@ -768,8 +768,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         ItemStack stack = slot.getItem();
         g.pose().pushPose();
         g.pose().translate(0, 0, 900);
-        g.renderTooltip(this.font, this.getTooltipFromContainerItem(stack),
-                stack.getTooltipImage(), mouseX, mouseY);
+        com.manta.api.render.ItemDraw.tooltip(g, this.font, this.getTooltipFromContainerItem(stack),
+                stack.getTooltipImage(), stack, mouseX, mouseY);
         g.pose().popPose();
     }
 
@@ -895,7 +895,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             ItemStack stack = slot.getItem();
             if (!stack.isEmpty()) {
                 g.renderItem(stack, 0, 0);
-                g.renderItemDecorations(this.font, stack, 0, 0);
+                com.manta.api.render.ItemDraw.decorations(g, this.font, stack, 0, 0);
             }
             g.pose().popPose();
         }
