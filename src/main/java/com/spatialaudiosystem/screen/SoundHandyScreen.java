@@ -56,9 +56,8 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     private static final int ROW_ICON_X = 10;
     private static final int ROW_ICON_DY = 4;
 
-    private static final int PAGE_LIST = 0;
-    private static final int PAGE_DEVICE = 1;
-    private static final int PAGE_SETTINGS = 2;
+    /** The three pages. R4.20.3: an enum stays an enum -- do not flatten it back to an int. */
+    private enum Page { LIST, DEVICE, SETTINGS }
     private static final int SELECTED_BG = 0x334FC3F7;
     private static final int SELECTED_BORDER = 0xFF4FC3F7;
     private static final int NAV_ACTIVE_BG = 0x2E4FC3F7;
@@ -93,8 +92,11 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
      */
     private static SoundHandyScreen behind;
 
-    private int page;
-    private int pendingPage = -1;
+    private final com.manta.api.controller.TabController<Page> pages =
+            new com.manta.api.controller.TabController<>(
+                    java.util.List.of(Page.LIST, Page.DEVICE, Page.SETTINGS), Page.LIST);
+    /** Where a finished slide-out should land; null while nothing is pending. */
+    private Page pendingPage;
     private long devSlideNano;
     private boolean devSlidingOut;
     private boolean listRequested;
@@ -124,7 +126,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         super(Component.translatable("gui.spatialaudiosystem.sound_handy.title"));
         // Always the list: the mini HUD already names the target, and opening straight onto its
         // page read as "the handy jumps somewhere" (user's real-device note 2026-09-05).
-        this.page = PAGE_LIST;
+        this.pages.setCurrent(Page.LIST);
     }
 
     @Override
@@ -238,13 +240,15 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         g.pose().popPose();
     }
 
-    /** "Always GUI scale 2" fitted to the screen: 1.0 at GUI scale 2, smaller when it would not fit. */
+    /**
+     * Follows the GUI scale (R4.22.4), shrinking only when the panel would not fit.
+     *
+     * <p>This used to multiply by {@code 2.0 / guiScale} -- the "always GUI scale 2"
+     * normalisation the rules banned in v1.22. Identical at GUI scale 2; at other scales the
+     * panel now follows the setting instead of cancelling it.
+     */
     private float panelScale() {
-        double gs = Minecraft.getInstance().getWindow().getGuiScale();
-        float target = gs > 0 ? (float) (2.0 / gs) : 1f;
-        float fitW = (this.width - 4) / (float) PANEL_W;
-        float fitH = (this.height - 4) / (float) PANEL_H;
-        return Math.min(target, Math.min(fitW, fitH));
+        return com.manta.api.screen.PanelFit.scale(this.width, this.height, PANEL_W, PANEL_H, 4);
     }
 
     /** Screen mouse -> the panel's own coordinates (bottom-right pivot), where every hit-test lives. */
@@ -317,7 +321,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     }
 
     private static boolean inRect(double mx, double my, int x, int y, int w, int h) {
-        return mx >= x && mx < x + w && my >= y && my < y + h;
+        return com.manta.api.hud.Rects.contains(mx, my, x, y, w, h);
     }
 
     /** The blinking caret over the name box while it is being edited (the shared component). */
@@ -405,7 +409,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     /** The playback device's own item icon at the head of each visible row (the layout has no item node). */
     @Override
     protected void afterDialogRender(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        if (page == PAGE_LIST) {
+        if (pages.is(Page.LIST)) {
             int rows = listScroll.rowCount();
             for (int i = 0; i < rows; i++) {
                 int x = dialogLocalToScreenX(ROW_ICON_X);
@@ -541,8 +545,8 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
                 HandyDeviceListPayload.Row r = rowAtRepeat();
                 return r == null ? defaultArgb : dotColor(r);
             }
-            case "hd-nav-list-bg": return page != PAGE_SETTINGS ? NAV_ACTIVE_BG : 0;
-            case "hd-nav-settings-bg": return page == PAGE_SETTINGS ? NAV_ACTIVE_BG : 0;
+            case "hd-nav-list-bg": return !pages.is(Page.SETTINGS) ? NAV_ACTIVE_BG : 0;
+            case "hd-nav-settings-bg": return pages.is(Page.SETTINGS) ? NAV_ACTIVE_BG : 0;
             case "hd-hud-track-bg": return hudToggle.trackBg();
             case "hd-hud-knob-bg": return hudToggle.knobBg();
             case "hd-layout-track-bg": return layoutToggle.trackBg();
@@ -555,7 +559,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     @Override
     public Integer getDynamicNumber(String[] classes, String key, int defaultValue) {
         switch (key) {
-            case "hd-count": return page == PAGE_LIST ? listScroll.rowCount() : 0;
+            case "hd-count": return pages.is(Page.LIST) ? listScroll.rowCount() : 0;
             case "hd-thumb-y": return listScroll.thumbY(defaultValue, LIST_H - 2, THUMB_H);
             case "hd-hud-knob-x": return hudToggle.knobX(defaultValue);
             case "hd-layout-knob-x": return layoutToggle.knobX(defaultValue);
@@ -568,10 +572,10 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     @Override
     public Boolean getDynamicBool(String[] classes, String key, boolean defaultValue) {
         switch (key) {
-            case "hd-tab-list": return page == PAGE_LIST;
-            case "hd-tab-device": return page == PAGE_DEVICE && selectedRow() != null;
-            case "hd-tab-settings": return page == PAGE_SETTINGS;
-            case "hd-scrollbar": return page == PAGE_LIST && listScroll.needsScrollbar();
+            case "hd-tab-list": return pages.is(Page.LIST);
+            case "hd-tab-device": return pages.is(Page.DEVICE) && selectedRow() != null;
+            case "hd-tab-settings": return pages.is(Page.SETTINGS);
+            case "hd-scrollbar": return pages.is(Page.LIST) && listScroll.needsScrollbar();
             case "hd-list-empty": return HandyDeviceListClient.rows().isEmpty();
             default: return null;
         }
@@ -580,7 +584,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     @Override
     public boolean onElementWheel(String[] classes, String key, int mouseX, int mouseY, double scrollY) {
         if ("hd-list-scroll".equals(key)) {
-            if (page != PAGE_LIST) return false;
+            if (!pages.is(Page.LIST)) return false;
             listScroll.scroll(scrollY > 0 ? -1 : 1);
             return true;
         }
@@ -604,13 +608,13 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
                     HandyDeviceListPayload.Row r = rowAtRepeat();
                     if (r != null) {
                         select(r.pos());
-                        showPage(PAGE_DEVICE);
+                        showPage(Page.DEVICE);
                     }
                     return;
                 }
-                case "hd-dev-back": showPage(PAGE_LIST); return;
-                case "hd-nav-list": showPage(PAGE_LIST); return;
-                case "hd-nav-settings": showPage(PAGE_SETTINGS); return;
+                case "hd-dev-back": showPage(Page.LIST); return;
+                case "hd-nav-list": showPage(Page.LIST); return;
+                case "hd-nav-settings": showPage(Page.SETTINGS); return;
                 case "hd-dev-name-box": beginName(); return;
                 case "hd-dev-play": sendAtSelected(HandyActionPayload.PLAY); return;
                 case "hd-dev-stop": sendAtSelected(HandyActionPayload.STOP); return;
@@ -629,29 +633,29 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
 
     // ---- actions --------------------------------------------------------------------------
 
-    private void showPage(int next) {
+    private void showPage(Page next) {
         if (nameInput.isFocused()) cancelName();
-        if (next == page && !devSlidingOut) return;
-        if (next == PAGE_DEVICE) {
+        if (pages.is(next) && !devSlidingOut) return;
+        if (next == Page.DEVICE) {
             // In from the left; the list underneath is hidden by the page's own visibility.
-            page = PAGE_DEVICE;
-            pendingPage = -1;
+            pages.setCurrent(Page.DEVICE);
+            pendingPage = null;
             devSlidingOut = false;
             devSlideNano = System.nanoTime();
-        } else if (page == PAGE_DEVICE) {
+        } else if (pages.is(Page.DEVICE)) {
             // Out to the left first; the switch happens when the slide has finished (render()).
             pendingPage = next;
             devSlidingOut = true;
             devSlideNano = System.nanoTime();
         } else {
-            page = next;
+            pages.setCurrent(next);
         }
         listScroll.clamp();
     }
 
     /** The device page's x offset for this frame: negative while entering or leaving, 0 at rest. */
     private float devPageOffset() {
-        if (page != PAGE_DEVICE) return 0f;
+        if (!pages.is(Page.DEVICE)) return 0f;
         float t = Math.min(1f, (System.nanoTime() - devSlideNano) / (float) DEV_SLIDE_NANOS);
         if (devSlidingOut) return -PANEL_W * easeOut(t);
         return -PANEL_W * (1f - easeOut(t));
@@ -661,8 +665,8 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     private void settleDevPage() {
         if (devSlidingOut && System.nanoTime() - devSlideNano >= DEV_SLIDE_NANOS) {
             devSlidingOut = false;
-            page = pendingPage < 0 ? PAGE_LIST : pendingPage;
-            pendingPage = -1;
+            pages.setCurrent(pendingPage == null ? Page.LIST : pendingPage);
+            pendingPage = null;
         }
     }
 

@@ -1,7 +1,6 @@
 package com.spatialaudiosystem.client;
 
 import com.manta.api.hud.HeldTools;
-import com.manta.api.hud.ModifierKeys;
 import com.manta.api.hud.ScrollCooldown;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.item.ModDataComponents;
@@ -44,11 +43,11 @@ public class RangeBoardClientHandler {
         if (stack.isEmpty()) return;
 
         double dy = event.getScrollDeltaY();
-        if (Math.abs(dy) < 0.0001) return;
+        if (com.manta.api.hud.WheelInput.isDead(dy)) return;
 
-        long window = mc.getWindow().getWindow();
-        boolean alt = ModifierKeys.alt(window);
-        boolean adjust = !alt && (ModifierKeys.ctrl(window) || ModifierKeys.shift(window))
+        com.manta.api.hud.WheelInput.Mods mods = com.manta.api.hud.WheelInput.mods(mc.getWindow().getWindow());
+        boolean alt = mods.alt();
+        boolean adjust = (mods.ctrl() || mods.shift())
                 && RangeBoardHudRenderer.currentMode != RangeBoardHudRenderer.MODE_NORMAL;
         if (!alt && !adjust) return;   // no wheel action for us — let the hotbar scroll
 
@@ -59,11 +58,11 @@ public class RangeBoardClientHandler {
 
         if (alt) {
             // Alt + wheel: cycle mode (R3.2.1). Client-only view state shared with RangeRenderer.
-            int dir = dy > 0 ? -1 : 1;
+            int dir = -com.manta.api.hud.WheelInput.direction(dy);
             int n = RangeBoardHudRenderer.MODE_COUNT;
             RangeBoardHudRenderer.currentMode = ((RangeBoardHudRenderer.currentMode + dir) % n + n) % n;
         } else {
-            adjustAttenuation(mc, stack, dy > 0 ? 1 : -1);
+            adjustAttenuation(mc, stack, com.manta.api.hud.WheelInput.direction(dy));
         }
         event.setCanceled(true);   // R3.5
     }

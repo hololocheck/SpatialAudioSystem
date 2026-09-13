@@ -1,7 +1,6 @@
 package com.spatialaudiosystem.client;
 
 import com.manta.api.hud.HeldTools;
-import com.manta.api.hud.ModifierKeys;
 import com.manta.api.hud.ScrollCooldown;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.handy.SoundHandyModes;
@@ -71,11 +70,11 @@ public final class SoundHandyClientHandler {
         ItemStack stack = HeldTools.find(mc.player, ModItems.SOUND_HANDY.get());
         if (stack.isEmpty()) return;
         double dy = event.getScrollDeltaY();
-        if (Math.abs(dy) < 0.0001) return;
-        long window = mc.getWindow().getWindow();
-        boolean alt = ModifierKeys.alt(window);
-        boolean ctrl = !alt && ModifierKeys.ctrl(window);
-        boolean shift = !alt && !ctrl && ModifierKeys.shift(window);   // R3.3.1: Alt > Ctrl > Shift
+        if (com.manta.api.hud.WheelInput.isDead(dy)) return;
+        com.manta.api.hud.WheelInput.Mods mods = com.manta.api.hud.WheelInput.mods(mc.getWindow().getWindow());   // R3.3.1
+        boolean alt = mods.alt();
+        boolean ctrl = mods.ctrl();
+        boolean shift = mods.shift();
         boolean rangeMode = SoundHandyItem.rangeMode(stack);
         // Alt and Ctrl belong to the range board's editing and only while the range mode is on;
         // Shift walks the devices always. An unmodified wheel is the hotbar's.
@@ -84,7 +83,7 @@ public final class SoundHandyClientHandler {
             event.setCanceled(true);
             return;
         }
-        int dir = dy > 0 ? -1 : 1;
+        int dir = -com.manta.api.hud.WheelInput.direction(dy);
         if (shift) {
             int current = HandyDeviceListClient.selectedIndex(stack);
             int next = SoundHandyModes.cycleSelection(current, dir, HandyDeviceListClient.rows().size());

@@ -145,7 +145,7 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
     @Override
     public Integer getDynamicNumber(String[] classes, String key, int defaultValue) {
         if ("rec-arrow-fill".equals(key)) {
-            return ARROW_INNER_W * progressPercent() / 100;
+            return com.manta.api.render.Gauge.fillWidthPercent(ARROW_INNER_W, progressPercent());
         }
         return null;
     }
@@ -172,19 +172,14 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
     }
 
     @Override
-    public void onElementClick(String[] classes, int mouseX, int mouseY, int button) {
-        if (com.manta.api.hud.HintToggleHelper.handleClick(classes)) return;
+    protected void handleMainClick(String[] classes, int mouseX, int mouseY, int button) {
         if (com.manta.api.hud.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
             sendButtonClick(com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON);
             return;
         }
         for (String c : classes) {
+            // hint toggle / wiki-btn / mc-popup-close は基底が先に処理する (A11)。
             if ("mc-popup-close".equals(c)) { onClose(); return; }
-            if ("wiki-btn".equals(c)) {
-                String pid = wikiPageId();
-                if (pid != null && !pid.isEmpty()) com.manta.api.wiki.Wiki.open(pid);
-                return;
-            }
             if ("rec-file-btn".equals(c)) {
                 RecordingErrorState.clear();
                 AudioFilePickerService.pickAndUpload(
@@ -216,7 +211,7 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) { onClose(); return true; }
+        // ESC は基底が処理する (closeOpenOverlay -> onClose)。ここで横取りすると overlay が閉じない。
         Minecraft mc = Minecraft.getInstance();
         if (mc.options != null && mc.options.keyInventory != null
                 && mc.options.keyInventory.matches(keyCode, scanCode)) {
@@ -253,12 +248,8 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
 
     /** No cover art: show the recording-medium item centred in the frame. */
     private void drawPlaceholder(GuiGraphics g, int x, int y, int w, int h) {
-        float scale = Math.min(w, h) * 0.62f / 16f;
-        g.pose().pushPose();
-        g.pose().translate(x + (w - 16 * scale) / 2f, y + (h - 16 * scale) / 2f, 0);
-        g.pose().scale(scale, scale, 1f);
-        g.renderItem(new ItemStack(ModItems.RECORDING_MEDIUM.get()), 0, 0);
-        g.pose().popPose();
+        com.manta.api.render.ItemDraw.stackInBox(g, new ItemStack(ModItems.RECORDING_MEDIUM.get()),
+                x, y, w, h, 0.62f, 0f);
     }
 
     /** 幅に収まるよう "…" で省略する。 実体は {@code HudText.ellipsize}。 */

@@ -77,26 +77,10 @@ public final class SasWikiLiveCapture {
     private static int captureStates(String id, String lang, boolean savePng,
                                      Supplier<? extends Screen> factory,
                                      BiConsumer<Screen, String> apply, String... states) {
-        Minecraft mc = Minecraft.getInstance();
-        int w = mc.getWindow().getGuiScaledWidth();
-        int h = mc.getWindow().getGuiScaledHeight();
-        int ok = 0;
-        for (String st : states) {
-            String key = id + "/" + st + "/" + lang;
-            if (done.contains(key)) { ok++; continue; }
-            try {
-                Screen screen = factory.get();
-                if (screen == null) return ok;   // world not ready yet — retried on the next login
-                apply.accept(screen, st);
-                screen.init(mc, w, h);
-                if (SasWikiCapture.captureScreen(screen, id, st, lang, savePng)) {
-                    done.add(key);
-                    ok++;
-                }
-            } catch (Throwable t) {
-                LOGGER.warn("[SasWikiLive] {} failed: {}", key, t.toString());
-            }
-        }
-        return ok;
+        // The loop is the part (B11). apply runs BEFORE init here -- TSU does the opposite, and
+        // which is right needs one real screenshot to settle, so both keep what they had.
+        return com.manta.api.wiki.WikiCaptureLoop.captureStates(done, id, lang, factory, apply, true,
+                (screen, sid, st, lg) -> SasWikiCapture.captureScreen(screen, sid, st, lg, savePng),
+                LOGGER, states);
     }
 }

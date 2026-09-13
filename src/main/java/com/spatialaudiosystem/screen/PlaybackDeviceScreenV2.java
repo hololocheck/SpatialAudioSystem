@@ -65,30 +65,21 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     /** Shown in place of the number when an entry plays endlessly. */
     private static final String ENDLESS_COUNT = "∞";
 
-    private static java.lang.reflect.Field SLOT_X_FIELD;
-    private static java.lang.reflect.Field SLOT_Y_FIELD;
-    static {
-        try {
-            SLOT_X_FIELD = Slot.class.getDeclaredField("x");
-            SLOT_Y_FIELD = Slot.class.getDeclaredField("y");
-            SLOT_X_FIELD.setAccessible(true);
-            SLOT_Y_FIELD.setAccessible(true);
-        } catch (Exception ignored) { }
-    }
-
     private boolean attenuationOn;
     private boolean rangeVisible;
-    private boolean showSchedule = false;
+    private final com.manta.api.controller.OverlayController schedulePopup =
+            new com.manta.api.controller.OverlayController();
     /** The redstone dialog. One overlay at a time: opening either closes the other. */
-    private boolean showRedstone = false;
+    private final com.manta.api.controller.OverlayController redstonePopup =
+            new com.manta.api.controller.OverlayController();
     private long scheduleOpenedAtNanos = 0L;
     // A4.19: the viewport owns the offset; rows resolve as repeat index + offset.
     private final com.manta.api.controller.ScrollViewport scheduleScroll =
             new com.manta.api.controller.ScrollViewport(() -> be().getEntryCount(), VISIBLE_ROWS)
-                    .activeWhen(() -> showSchedule);
+                    .activeWhen(() -> schedulePopup.isOpen());
     private final com.manta.api.controller.ScrollViewport redstoneScroll =
             new com.manta.api.controller.ScrollViewport(() -> be().getRedstoneRules().size(), VISIBLE_ROWS)
-                    .activeWhen(() -> showRedstone);
+                    .activeWhen(() -> redstonePopup.isOpen());
     /** The device's name, edited in the title box (sound handy, 1.1.0); Enter saves, Esc cancels. */
     private final com.manta.api.controller.TextInputController nameInput =
             new com.manta.api.controller.TextInputController(
@@ -244,7 +235,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     /** Wiki capture: force the shot to the main view or to the armed, open schedule popup. */
     public void wikiApplyState(String state) {
         boolean sched = "schedule".equals(state);
-        showSchedule = sched;
+        schedulePopup.setOpen(sched);
         scheduleModeOn = sched;
         if (sched && !be().isScheduleMode()) be().toggleScheduleMode();   // dummy client BE: no packets
         scheduleOpenedAtNanos = 0L;   // no open animation, and slot items draw immediately
@@ -255,8 +246,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     @Override
     protected String overlayJson() {
-        if (showSchedule) return SasLayouts.load("layouts/playback-schedule.json");
-        if (showRedstone) return SasLayouts.load("layouts/playback-redstone.json");
+        if (schedulePopup.isOpen()) return SasLayouts.load("layouts/playback-schedule.json");
+        if (redstonePopup.isOpen()) return SasLayouts.load("layouts/playback-redstone.json");
         return null;
     }
 
@@ -488,8 +479,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             case "pb-atten-knob-x": return attenuationToggle.knobX(defaultValue);
             case "pb-schedplay-knob-x": return schedulePlaybackToggle.knobX(defaultValue);
             case "pb-range-knob-x": return rangeToggle.knobX(defaultValue);
-            case "pb-entry-count":  return showSchedule ? scheduleScroll.rowCount() : 0;
-            case "pb-rs-count":     return showRedstone ? redstoneScroll.rowCount() : 0;
+            case "pb-entry-count":  return schedulePopup.isOpen() ? scheduleScroll.rowCount() : 0;
+            case "pb-rs-count":     return redstonePopup.isOpen() ? redstoneScroll.rowCount() : 0;
             case "pb-rs-enabled-knob-x": return redstoneToggle.knobX(defaultValue);
             case "pb-sched-thumb-y": return scheduleScroll.thumbY(defaultValue, LIST_H - 2, THUMB_H);
             case "pb-rs-thumb-y":    return redstoneScroll.thumbY(defaultValue, RS_LIST_H - 2, THUMB_H);
@@ -505,7 +496,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     @Override
     public Boolean getDynamicBool(String[] classes, String key, boolean defaultValue) {
         if ("pb-playing-frame-visible".equals(key)) {
-            return showSchedule && windowRowOf(be().getPlayingEntry()) >= 0;
+            return schedulePopup.isOpen() && windowRowOf(be().getPlayingEntry()) >= 0;
         }
         if ("pb-sched-scrollbar".equals(key)) return scheduleScroll.needsScrollbar();
         if ("pb-rs-scrollbar".equals(key)) return redstoneScroll.needsScrollbar();
@@ -572,12 +563,11 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     }
 
     @Override
-    public void onElementClick(String[] classes, int mouseX, int mouseY, int button) {
-        if (com.manta.api.hud.HintToggleHelper.handleClick(classes)) return;
+    protected void handleMainClick(String[] classes, int mouseX, int mouseY, int button) {
         if (attenuationToggle.handleClick(classes)) return;
         if (rangeToggle.handleClick(classes)) return;
         if (schedulePlaybackToggle.handleClick(classes)) return;
-        if (showRedstone && redstoneToggle.handleClick(classes)) return;
+        if (redstonePopup.isOpen() && redstoneToggle.handleClick(classes)) return;
         if (com.manta.api.hud.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
             sendButtonClick(com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON);
             return;
@@ -586,11 +576,6 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             switch (c) {
                 case "pb-title": beginName(); return;
                 case "mc-popup-close": onClose(); return;
-                case "wiki-btn": {
-                    String pid = wikiPageId();
-                    if (pid != null && !pid.isEmpty()) com.manta.api.wiki.Wiki.open(pid);
-                    return;
-                }
                 case "pb-play-btn":
                     if (scheduleModeOn) {
                         // In schedule mode the main play button drives the schedule too.
@@ -622,7 +607,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     // The button is a canvas node (self-clickable in the engine), so this is
                     // the class the click arrives with.
                     closeSchedule();
-                    showRedstone = true;
+                    redstonePopup.setOpen(true);
                     return;
                 case "pb-rs-close":
                     closeRedstone();
@@ -648,8 +633,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     return;
                 }
                 case "pb-sched-btn":
-                    showRedstone = false;
-                    showSchedule = true;
+                    redstonePopup.setOpen(false);
+                    schedulePopup.setOpen(true);
                     scheduleOpenedAtNanos = System.nanoTime();
                     return;
                 case "pb-sched-close":
@@ -706,22 +691,34 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     }
 
     private void closeSchedule() {
-        showSchedule = false;
+        schedulePopup.setOpen(false);
         scheduleOpenedAtNanos = 0L;
         hideScheduleSlots();
     }
 
     private void closeRedstone() {
-        showRedstone = false;
+        redstonePopup.setOpen(false);
+    }
+
+    /**
+     * 基底の ESC / {@code mc-popup-close} が最初に呼ぶ hook (R4.17.1)。
+     *
+     * <p>2026-09-13 まで ESC を自前で横取りしていたので、<b>枠の × では popup が閉じなかった</b>。
+     */
+    @Override
+    protected boolean closeOpenOverlay() {
+        if (schedulePopup.isOpen()) { closeSchedule(); return true; }
+        if (redstonePopup.isOpen()) { closeRedstone(); return true; }
+        return false;
     }
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         if (handyBehind != null) handyBehind.renderBehind(g, partialTick);
         followListSizes();
-        if (showSchedule) positionScheduleSlots(); else hideScheduleSlots();
+        if (schedulePopup.isOpen()) positionScheduleSlots(); else hideScheduleSlots();
         super.render(g, mouseX, mouseY, partialTick);
-        if (showSchedule) {
+        if (schedulePopup.isOpen()) {
             renderScheduleOverlayItems(g, mouseX, mouseY);
             renderCarriedAbovePopup(g, mouseX, mouseY);
             renderHoveredPlaylistTooltip(g, mouseX, mouseY);
@@ -759,13 +756,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     private void renderCarriedAbovePopup(GuiGraphics g, int mouseX, int mouseY) {
         ItemStack carried = this.menu.getCarried();
         if (carried.isEmpty()) return;
-        float s = dialogScale();
-        g.pose().pushPose();
-        g.pose().translate(mouseX, mouseY, 800);   // slot items 700 < carried 800 < tooltip 900
-        g.pose().scale(s, s, 1f);
-        g.renderItem(carried, -8, -8);
-        g.renderItemDecorations(this.font, carried, -8, -8);
-        g.pose().popPose();
+        // slot items 700 < carried 800 < tooltip 900
+        com.manta.api.render.ItemDraw.carried(g, this.font, carried, mouseX, mouseY, dialogScale(), 800);
     }
 
     /** Base tooltips render under the popup too; redraw the hovered playlist slot's above it. */
@@ -817,7 +809,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
      */
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (showSchedule && button >= 0 && button <= 2) {
+        if (schedulePopup.isOpen() && button >= 0 && button <= 2) {
             positionScheduleSlots();   // fresh positions even right after opening / dragging the popup
             Slot slot = hoveredPlaylistSlot(mouseX, mouseY);
             if (slot != null) {
@@ -840,7 +832,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     /** Release over a popup slot: the click already ran on press, so the release is a no-op. */
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (showSchedule && button >= 0 && button <= 2
+        if (schedulePopup.isOpen() && button >= 0 && button <= 2
                 && hoveredPlaylistSlot(mouseX, mouseY) != null) {
             return true;
         }
@@ -869,12 +861,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
      * we read the same {@code dialogScale()} the drawing uses so visual and hit area cannot diverge.
      */
     private boolean isOverScheduleSlot(Slot slot, double mouseX, double mouseY) {
-        float s = dialogScale();
-        float x0 = this.leftPos + slot.x;
-        float y0 = this.topPos + slot.y;
-        float size = 16f * s;
-        return mouseX >= x0 && mouseX < x0 + size
-                && mouseY >= y0 && mouseY < y0 + size;
+        return com.manta.api.hud.Rects.overSlot(mouseX, mouseY,
+                this.leftPos + slot.x, this.topPos + slot.y, dialogScale());
     }
 
     private void hideScheduleSlots() {
@@ -884,12 +872,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     }
 
     private void setMenuSlotPos(int slotIndex, int x, int y) {
-        if (slotIndex < 0 || slotIndex >= this.menu.slots.size()) return;
-        Slot slot = this.menu.slots.get(slotIndex);
-        try {
-            if (SLOT_X_FIELD != null) SLOT_X_FIELD.setInt(slot, x);
-            if (SLOT_Y_FIELD != null) SLOT_Y_FIELD.setInt(slot, y);
-        } catch (Exception ignored) { }
+        com.manta.api.screen.SlotMover.move(this.menu, slotIndex, x, y);
     }
 
     /** Overlay slots render under the popup panel, so redraw their items above it (z=700). */
@@ -960,7 +943,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
      * took the hover for itself, so the div's hover colours never showed (real device, 2026-09-03).
      */
     private static void drawRedstoneButtonIcon(GuiGraphics g, int x, int y, int w, int h, int mouseX, int mouseY) {
-        boolean hovered = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
+        boolean hovered = com.manta.api.hud.Rects.contains(mouseX, mouseY, x, y, w, h);
         int size = Math.min(w, h) - 2;
         com.manta.api.svg.SvgIcon.draw(g, hovered ? REDSTONE_SVG_HOVER : REDSTONE_SVG,
                 x + (w - size) / 2, y + (h - size) / 2, size, size);
@@ -978,12 +961,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             return;
         }
         if (id != null) ClientArtCache.request(id);
-        float scale = Math.min(w, h) * 0.62f / 16f;
-        g.pose().pushPose();
-        g.pose().translate(x + (w - 16 * scale) / 2f, y + (h - 16 * scale) / 2f, 0);
-        g.pose().scale(scale, scale, 1f);
-        g.renderItem(new ItemStack(ModItems.RECORDING_MEDIUM.get()), 0, 0);
-        g.pose().popPose();
+        com.manta.api.render.ItemDraw.stackInBox(g, new ItemStack(ModItems.RECORDING_MEDIUM.get()),
+                x, y, w, h, 0.62f, 0f);
     }
 
     @Override
@@ -1020,12 +999,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             nameInput.keyPressed(keyCode);
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            if (showSchedule) { closeSchedule(); return true; }
-            if (showRedstone) { closeRedstone(); return true; }
-            onClose();
-            return true;
-        }
+        // ESC は基底が処理する: closeOpenOverlay() (下で override) -> onClose()。
         Minecraft mc = Minecraft.getInstance();
         if (mc.options != null && mc.options.keyInventory != null
                 && mc.options.keyInventory.matches(keyCode, scanCode)) {

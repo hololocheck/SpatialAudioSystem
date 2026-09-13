@@ -89,9 +89,8 @@ public final class SoundHandyHudRenderer {
 
     @SubscribeEvent
     public static void onRenderGui(RenderGuiEvent.Post event) {
-        // Toasts are drawn once per mod from its own RenderGuiEvent.Post (HudToast's contract);
-        // this is SAS's one call, so it sits before the panel's own gates.
-        HudToast.render(event.getGuiGraphics());
+        // Manta draws the shared toast itself (B14). Until 2026-09-13 every consumer registered
+        // the library's renderer, so one toast was drawn once per loaded mod.
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.options.hideGui) return;   // R2.3.1
         // R2.3.2, with the HudCoexistentScreen exception: the handy's own panel keeps the badge
