@@ -1,13 +1,10 @@
 package com.spatialaudiosystem.blockentity;
 
-import com.spatialaudiosystem.network.RedstoneRuleCommandPayload;
 import com.spatialaudiosystem.redstone.RedstoneOutputPlan;
+import com.spatialaudiosystem.network.PlaybackDeviceData;
 import com.spatialaudiosystem.redstone.RedstoneRule;
 import com.spatialaudiosystem.redstone.RedstoneRule.Trigger;
-import io.netty.buffer.Unpooled;
-import io.netty.handler.codec.DecoderException;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.FriendlyByteBuf;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +12,6 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * SAS-RS-002: the rule list on the device, the packet that edits it, and the wiring that turns
@@ -27,8 +23,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * and the two the block reads it at.
  */
 class RedstoneRulesTest {
-
-    private static final BlockPos POS = new BlockPos(3, 70, 12);
 
     private static void set(Object target, String field, Object value) {
         try {
@@ -156,35 +150,20 @@ class RedstoneRulesTest {
                 .isEqualTo(new RedstoneRule(Trigger.END, 15, 0, RedstoneRule.MAX_LENGTH_TICKS));
     }
 
-    private static RedstoneRuleCommandPayload decode(int op, int index, int delta) {
-        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-        buf.writeBlockPos(POS);
-        buf.writeVarInt(op);
-        buf.writeVarInt(index);
-        buf.writeVarInt(delta);
-        return RedstoneRuleCommandPayload.STREAM_CODEC.decode(buf);
+    private static boolean accepts(int op, int index, int delta) {
+        return PlaybackDeviceData.schema().accepts("redstone-rule", op, index, delta);
     }
 
     @Test
-    @DisplayName("SAS-RS-002: the command is bounded at decode")
-    void theCommandIsBoundedAtDecode() {
-        assertThat(decode(RedstoneRuleCommandPayload.OP_ADJUST_DELAY, 5, -1).index()).isEqualTo(5);
-        assertThat(decode(RedstoneRuleCommandPayload.OP_ADJUST_ENTRY, 15, 1).index()).isEqualTo(15);
-        assertThat(decode(RedstoneRuleCommandPayload.OP_MOVE, 3, -1).index()).isEqualTo(3);
-        assertThatThrownBy(() -> decode(9, 0, 0)).as("one past the last op").isInstanceOf(DecoderException.class);
-        assertThatThrownBy(() -> decode(RedstoneRuleCommandPayload.OP_REMOVE, 16, 0))
-                .as("one past the rows").isInstanceOf(DecoderException.class);
-        assertThatThrownBy(() -> decode(RedstoneRuleCommandPayload.OP_ADJUST_STRENGTH, 0, 2))
-                .as("a wheel notch is one, whatever the client claims").isInstanceOf(DecoderException.class);
-    }
-
-    @Test
-    @DisplayName("SAS-RS-002: the command round-trips")
-    void theCommandRoundTrips() {
-        RedstoneRuleCommandPayload sent = new RedstoneRuleCommandPayload(POS, RedstoneRuleCommandPayload.OP_CYCLE_TRIGGER, 2, 1);
-        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-        RedstoneRuleCommandPayload.STREAM_CODEC.encode(buf, sent);
-        assertThat(RedstoneRuleCommandPayload.STREAM_CODEC.decode(buf)).isEqualTo(sent);
+    @DisplayName("SAS-RS-002: the command is bounded by the codec, not by the handler")
+    void theCommandIsBoundedByTheCodec() {
+        assertThat(accepts(PlaybackDeviceData.RULE_ADJUST_DELAY, 5, -1)).isTrue();
+        assertThat(accepts(PlaybackDeviceData.RULE_ADJUST_ENTRY, RedstoneRule.MAX_RULES - 1, 1)).isTrue();
+        assertThat(accepts(PlaybackDeviceData.RULE_MOVE, 3, -1)).isTrue();
+        assertThat(accepts(PlaybackDeviceData.RULE_MOVE + 1, 0, 0)).as("one past the last op").isFalse();
+        assertThat(accepts(PlaybackDeviceData.RULE_REMOVE, RedstoneRule.MAX_RULES, 0)).as("one past the rows").isFalse();
+        assertThat(accepts(PlaybackDeviceData.RULE_ADJUST_STRENGTH, 0, 2))
+                .as("a wheel notch is one, whatever the client claims").isFalse();
     }
 
     /** The named source file, found by walking up from wherever the test runner started. */

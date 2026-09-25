@@ -15,7 +15,7 @@ import com.spatialaudiosystem.client.SoundHandyLayoutState;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.item.SoundHandyItem;
-import com.spatialaudiosystem.network.HandyDeviceListPayload;
+import com.spatialaudiosystem.handy.HandyDeviceRow;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -38,7 +38,7 @@ import java.util.Map;
  * Shift+wheel or a list push shows on the next frame. A change of target slides the rows the
  * way the wheel went ({@link HandyTargetSwitch}). There is no mode badge: the handy has no
  * tool modes (user decision 2026-09-04). Results of an action arrive as
- * {@code ClientNotifyPayload} and go through {@link #toast}, a {@link HudToast}, which shows
+ * the tools host's notice ({@code client.HandyClient}) and go through {@link #toast}, a {@link HudToast}, which shows
  * whether or not this panel is hidden by the setting.
  */
 @EventBusSubscriber(modid = SpatialAudioSystem.MOD_ID, value = Dist.CLIENT)
@@ -73,8 +73,8 @@ public final class SoundHandyHudRenderer {
     /** The target switch: which way the rows slide and how far along. */
     private static final HandyTargetSwitch switching = new HandyTargetSwitch();
     /** The row drawn last frame, and the one sliding out during a switch. */
-    private static HandyDeviceListPayload.Row shownRow;
-    private static HandyDeviceListPayload.Row leavingRow;
+    private static HandyDeviceRow shownRow;
+    private static HandyDeviceRow leavingRow;
     /**
      * The device's item icon, built on first draw and kept afterwards.
      *
@@ -119,7 +119,7 @@ public final class SoundHandyHudRenderer {
         // The target switch: a change of index between frames starts the slide; the row that
         // was shown becomes the one sliding out. A refreshed row of the same device never slides.
         int index = held ? HandyDeviceListClient.selectedIndex(stack) : -1;
-        HandyDeviceListPayload.Row row = held ? targetRow(stack) : null;
+        HandyDeviceRow row = held ? targetRow(stack) : null;
         long now = System.nanoTime();
         if (switching.offer(index, now)) leavingRow = shownRow;
         shownRow = row;
@@ -147,8 +147,8 @@ public final class SoundHandyHudRenderer {
     }
 
     private static void drawPanel(GuiGraphics g, Minecraft mc, int x, int y, float fade, int accent, ItemStack stack,
-                                  boolean rangeMode, boolean highlight, HandyDeviceListPayload.Row row,
-                                  HandyDeviceListPayload.Row leaving, int dir, float progress) {
+                                  boolean rangeMode, boolean highlight, HandyDeviceRow row,
+                                  HandyDeviceRow leaving, int dir, float progress) {
         int bg = com.manta.api.hud.HudChrome.fadeAlpha(0xE01a1a2e, fade);
         int border = com.manta.api.hud.HudChrome.fadeAlpha(0xFF000000 | accent, fade);
         HudChrome.drawRoundedRect(g, x, y, PANEL_W, PANEL_H, bg, border);
@@ -171,7 +171,7 @@ public final class SoundHandyHudRenderer {
 
     /** The five rows for one target, with their top-left at (x, y); the "no target" line when there is none. */
     private static void drawRows(GuiGraphics g, Minecraft mc, int x, int y, float fade, ItemStack stack,
-                                 boolean rangeMode, boolean highlight, HandyDeviceListPayload.Row row) {
+                                 boolean rangeMode, boolean highlight, HandyDeviceRow row) {
         int textX = x + PAD + ICON + 4;
         int rowY = y + PAD;
         if (row == null) {
@@ -265,7 +265,7 @@ public final class SoundHandyHudRenderer {
         return com.manta.api.hud.HudText.ellipsize(mc.font, text, maxW);
     }
 
-    private static HandyDeviceListPayload.Row targetRow(ItemStack stack) {
+    private static HandyDeviceRow targetRow(ItemStack stack) {
         int i = HandyDeviceListClient.selectedIndex(stack);
         return i < 0 ? null : HandyDeviceListClient.rowAt(i);
     }
@@ -273,8 +273,8 @@ public final class SoundHandyHudRenderer {
     /**
      * A server notification, already localized: a toast while the handy is in hand, the range
      * board's own badge row otherwise (that row is only drawn while the board is held). Called
-     * from {@code ClientNotifyPayload}; the held check lives here so the common payload class
-     * never names a client type.
+     * from {@code client.HandyClient} when the tools host's notice counter moves; the held check lives here, with
+     * the other client-side reads.
      */
     public static void route(String text, int color) {
         Minecraft mc = Minecraft.getInstance();

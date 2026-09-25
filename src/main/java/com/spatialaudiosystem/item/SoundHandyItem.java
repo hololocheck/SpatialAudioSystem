@@ -2,8 +2,8 @@ package com.spatialaudiosystem.item;
 
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
 import com.spatialaudiosystem.handy.SoundDeviceLink;
-import com.spatialaudiosystem.network.ClientNotifyPayload;
-import com.spatialaudiosystem.network.HandyRangeEditPayload;
+import com.spatialaudiosystem.handy.HandyRangeEdit;
+import com.spatialaudiosystem.network.HandyData;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
@@ -22,7 +22,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.FMLEnvironment;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
@@ -69,7 +68,7 @@ public class SoundHandyItem extends Item {
             // Range mode: the board's own air-click - a corner at the look target, Shift clears.
             if (!level.isClientSide() && player instanceof ServerPlayer sp) {
                 if (player.isShiftKeyDown()) {
-                    HandyRangeEditPayload.apply(sp, HandyRangeEditPayload.clear());
+                    HandyRangeEdit.apply(sp, HandyRangeEdit.clear());
                 } else {
                     BlockPos target = RangeBoardItem.getLookTargetBlock(player, level);
                     if (target != null) setCorner(sp, target);
@@ -102,7 +101,7 @@ public class SoundHandyItem extends Item {
         if (rangeMode(stack)) {
             if (!level.isClientSide() && player instanceof ServerPlayer sp) {
                 if (player.isShiftKeyDown()) {
-                    HandyRangeEditPayload.apply(sp, HandyRangeEditPayload.clear());
+                    HandyRangeEdit.apply(sp, HandyRangeEdit.clear());
                 } else {
                     setCorner(sp, pos);
                 }
@@ -141,8 +140,8 @@ public class SoundHandyItem extends Item {
                 : SoundDeviceLink.ownedDevice(player.server, player.getUUID(), target);
         ItemStack board = be == null ? ItemStack.EMPTY
                 : be.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.RANGE_SLOT);
-        int op = board.has(ModDataComponents.RANGE_POS1) ? HandyRangeEditPayload.SET_POS2 : HandyRangeEditPayload.SET_POS1;
-        HandyRangeEditPayload.apply(player, HandyRangeEditPayload.corner(op, pos));
+        int op = board.has(ModDataComponents.RANGE_POS1) ? HandyRangeEdit.SET_POS2 : HandyRangeEdit.SET_POS1;
+        HandyRangeEdit.apply(player, HandyRangeEdit.corner(op, pos));
     }
 
     /** The device's name, or its position when unnamed - the same text the list shows. */
@@ -177,8 +176,6 @@ public class SoundHandyItem extends Item {
 
     /** Sends a lang key (with tab-separated arguments) that the client translates in its own language. */
     static void notify(Player player, String keyAndArgs, int color) {
-        if (player instanceof ServerPlayer sp) {
-            PacketDistributor.sendToPlayer(sp, new ClientNotifyPayload(keyAndArgs, color));
-        }
+        HandyData.notify(player, keyAndArgs, color);
     }
 }

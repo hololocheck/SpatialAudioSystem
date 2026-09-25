@@ -8,21 +8,26 @@ import com.manta.api.render.TextCaretRenderer;
 import com.manta.api.screen.JsonLayoutEngine;
 import com.manta.api.screen.JsonLayoutPlainScreen;
 import com.manta.api.screen.JsonLayoutScreen;
+import com.manta.api.screen.PageLayer;
+import com.manta.api.state.BoolSlot;
+import com.manta.api.state.ColorSlot;
+import com.manta.api.state.MantaState;
+import com.manta.api.state.NumberSlot;
+import com.manta.api.state.TextSlot;
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
+import com.spatialaudiosystem.client.HandyClient;
 import com.spatialaudiosystem.client.HandyDeviceListClient;
 import com.spatialaudiosystem.client.SoundHandyLayoutState;
+import com.spatialaudiosystem.handy.HandyActions;
+import com.spatialaudiosystem.handy.HandyDeviceRow;
 import com.spatialaudiosystem.handy.SoundDeviceRegistry;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.SoundHandyItem;
-import com.spatialaudiosystem.network.HandyActionPayload;
-import com.spatialaudiosystem.network.HandyDeviceListPayload;
-import com.spatialaudiosystem.network.SetDeviceNamePayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
@@ -40,6 +45,12 @@ import java.util.List;
  * stack sync then confirms or corrects it.
  */
 public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexistentScreen {
+
+    /** Every value on this screen's pages is pushed (MANTA_7_CONCEPT §4.2): a page asks it nothing. */
+    @Override
+    protected boolean pushOnly() {
+        return true;
+    }
     static final int PANEL_W = 220;
     static final int PANEL_H = 360;
     private static final int RIGHT_MARGIN = 12;
@@ -122,6 +133,21 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     private final ToggleSwitchController layoutToggle = new ToggleSwitchController("hd-layout-track", "hd-layout-knob",
             SoundHandyLayoutState::layoutAdjustMode, SoundHandyLayoutState::setLayoutAdjustMode);
 
+    // ===== Manta 7 push (Phase 4, 2026-09-23) =====
+    // Every value of the page is WRITTEN here each frame before the engine draws (render and
+    // renderBehind): the device page's slide moves on the clock and the name box follows every
+    // key, so a frame is the cadence the pull had - an unchanged value costs nothing. The screen
+    // overrides no getDynamic*. The boxes are pushed as OFFSETS from each node's own static value
+    // (the pull answered default + delta; hd-dev-x moves nodes that sit at three different x), a
+    // list row that the pull answered with its default is pushed "none" (clear), and the hint
+    // toggle and the transitions are the base screen's (FrameworkState).
+    private MantaState pushed;
+    private TextSlot tRowName, tRowPos, tDevName, tDevPos, tDevStatus;
+    private ColorSlot cRowBg, cRowBorder, cRowDot, cNavList, cNavSettings,
+            cHudTrack, cHudKnob, cLayoutTrack, cLayoutKnob, cDevNameBorder;
+    private NumberSlot nCount, nThumbY, nHudKnobX, nLayoutKnobX, nDevX;
+    private BoolSlot bTabList, bTabDevice, bTabSettings, bScrollbar, bListEmpty;
+
     public SoundHandyScreen(ItemStack handy) {
         super(Component.translatable("gui.spatialaudiosystem.sound_handy.title"));
         // Always the list: the mini HUD already names the target, and opening straight onto its
@@ -168,12 +194,13 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         // covers a handy picked up before the client had the list (init re-runs on resize).
         if (!listRequested) {
             listRequested = true;
-            PacketDistributor.sendToServer(HandyActionPayload.of(HandyActionPayload.REQUEST_LIST));
+            HandyClient.action(HandyActions.REQUEST_LIST, 0, null);
         }
     }
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        pushAll();
         float offY = slideOffsetY();
         float s = panelScale();
         int pvx = px + PANEL_W;
@@ -227,6 +254,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
      * rest, no slide, no hover. Input never reaches it while it is behind.
      */
     void renderBehind(GuiGraphics g, float partialTick) {
+        pushAll();
         float s = panelScale();
         int pvx = px + PANEL_W;
         int pvy = py + PANEL_H;
@@ -456,7 +484,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         return handy().get(ModDataComponents.HANDY_SELECTED_DEVICE);
     }
 
-    private static HandyDeviceListPayload.Row selectedRow() {
+    private static HandyDeviceRow selectedRow() {
         int i = HandyDeviceListClient.selectedIndex(handy());
         return i < 0 ? null : HandyDeviceListClient.rowAt(i);
     }
@@ -467,18 +495,13 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         return idx < 0 ? -1 : idx + listScroll.offset();
     }
 
-    private HandyDeviceListPayload.Row rowAtRepeat() {
+    private HandyDeviceRow rowAtRepeat() {
         int i = rowIndexAtRepeat();
-        List<HandyDeviceListPayload.Row> rows = HandyDeviceListClient.rows();
+        List<HandyDeviceRow> rows = HandyDeviceListClient.rows();
         return i >= 0 && i < rows.size() ? rows.get(i) : null;
     }
 
-    private boolean isSelectedRepeat() {
-        int i = rowIndexAtRepeat();
-        return i >= 0 && i == HandyDeviceListClient.selectedIndex(handy());
-    }
-
-    private static String nameText(HandyDeviceListPayload.Row row) {
+    private static String nameText(HandyDeviceRow row) {
         return row.name().isEmpty()
                 ? Component.translatable("gui.spatialaudiosystem.sound_handy.name_placeholder").getString()
                 : row.name();
@@ -489,7 +512,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
                 + " · " + pos.dimension().location().getPath();
     }
 
-    private static String statusText(HandyDeviceListPayload.Row row) {
+    private static String statusText(HandyDeviceRow row) {
         if (!row.loaded()) return Component.translatable("gui.spatialaudiosystem.sound_handy.not_loaded").getString();
         if (row.playing()) return Component.translatable("gui.spatialaudiosystem.status_playing").getString();
         if (!row.hasMedium()) return Component.translatable("hud.spatialaudiosystem.handy_no_medium").getString();
@@ -497,87 +520,105 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     }
 
     /** The dot answers "can it play": green with a medium, red without (user's note 2026-09-05); dark when unloaded. */
-    private static int dotColor(HandyDeviceListPayload.Row row) {
+    private static int dotColor(HandyDeviceRow row) {
         if (!row.loaded()) return DOT_UNLOADED;
         return row.hasMedium() ? DOT_PLAYING : DOT_NO_MEDIUM;
     }
 
-    // ---- binding handlers -----------------------------------------------------------------
+    // ---- the push (Manta 7) ----------------------------------------------------------------
 
     @Override
-    public String getDynamicText(String[] classes, String defaultText) {
-        for (String c : classes) {
-            switch (c) {
-                case "hd-row-name": {
-                    HandyDeviceListPayload.Row r = rowAtRepeat();
-                    return r == null ? "" : nameText(r);
-                }
-                case "hd-row-pos": {
-                    HandyDeviceListPayload.Row r = rowAtRepeat();
-                    return r == null ? "" : posText(r.pos());
-                }
-                case "hd-dev-name-text": {
-                    if (nameInput.isFocused()) return nameInput.display();
-                    HandyDeviceListPayload.Row r = selectedRow();
-                    return r == null ? "" : nameText(r);
-                }
-                case "hd-dev-pos": {
-                    HandyDeviceListPayload.Row r = selectedRow();
-                    return r == null ? "" : posText(r.pos());
-                }
-                case "hd-dev-status": {
-                    HandyDeviceListPayload.Row r = selectedRow();
-                    return r == null ? "" : statusText(r);
-                }
-                default:
-                    break;
+    protected void pageOpened(Object page, PageLayer layer) {
+        if (layer != PageLayer.PRIMARY) return;
+        pushed = MantaState.of(page);
+        tRowName = pushed.text("hd-row-name");
+        tRowPos = pushed.text("hd-row-pos");
+        tDevName = pushed.text("hd-dev-name-text");
+        tDevPos = pushed.text("hd-dev-pos");
+        tDevStatus = pushed.text("hd-dev-status");
+        cRowBg = pushed.color("hd-row-bg");
+        cRowBorder = pushed.color("hd-row-border");
+        cRowDot = pushed.color("hd-row-dot");
+        cNavList = pushed.color("hd-nav-list-bg");
+        cNavSettings = pushed.color("hd-nav-settings-bg");
+        cHudTrack = pushed.color("hd-hud-track-bg");
+        cHudKnob = pushed.color("hd-hud-knob-bg");
+        cLayoutTrack = pushed.color("hd-layout-track-bg");
+        cLayoutKnob = pushed.color("hd-layout-knob-bg");
+        cDevNameBorder = pushed.color("hd-dev-name-border");
+        nCount = pushed.number("hd-count");
+        nThumbY = pushed.number("hd-thumb-y");
+        nHudKnobX = pushed.number("hd-hud-knob-x");
+        nLayoutKnobX = pushed.number("hd-layout-knob-x");
+        nDevX = pushed.number("hd-dev-x");
+        bTabList = pushed.bool("hd-tab-list");
+        bTabDevice = pushed.bool("hd-tab-device");
+        bTabSettings = pushed.bool("hd-tab-settings");
+        bScrollbar = pushed.bool("hd-scrollbar");
+        bListEmpty = pushed.bool("hd-list-empty");
+        // The pull answered every class-only node with its own default text: declining is the same.
+        pushed.textByKeyOnly();
+        // The row slots are the screen's from the first frame, rows or not: the list arrives by packet after
+        // the page opens, and a player with no device never has a row - an unpushed slot would be asked of a
+        // handler that answers nothing, every frame (measured 2026-09-23: `unassigned 5` on open). None is
+        // what the pull answered outside a row; each row that exists is pushed below.
+        pushed.clear(tRowName);
+        pushed.clear(tRowPos);
+        pushed.clear(cRowBg);
+        pushed.clear(cRowBorder);
+        pushed.clear(cRowDot);
+        pushAll();
+    }
+
+    /** Every value of the page, from the expressions the pull answered with. An unchanged value costs nothing. */
+    private void pushAll() {
+        if (pushed == null || !pushed.isOpen()) return;
+        HandyDeviceRow sel = selectedRow();
+        pushed.set(tDevName, nameInput.isFocused() ? nameInput.display() : sel == null ? "" : nameText(sel));
+        pushed.set(tDevPos, sel == null ? "" : posText(sel.pos()));
+        pushed.set(tDevStatus, sel == null ? "" : statusText(sel));
+        if (nameInput.isFocused()) {
+            pushed.set(cDevNameBorder, SELECTED_BORDER);
+        } else {
+            pushed.clear(cDevNameBorder);   // the pull's defaultArgb: the box's own border
+        }
+        pushed.set(cNavList, !pages.is(Page.SETTINGS) ? NAV_ACTIVE_BG : 0);
+        pushed.set(cNavSettings, pages.is(Page.SETTINGS) ? NAV_ACTIVE_BG : 0);
+        pushed.set(cHudTrack, hudToggle.trackBg());
+        pushed.set(cHudKnob, hudToggle.knobBg());
+        pushed.set(cLayoutTrack, layoutToggle.trackBg());
+        pushed.set(cLayoutKnob, layoutToggle.knobBg());
+        // Offsets: each helper is default + delta, so its delta is its answer for 0.
+        pushed.setOffset(nThumbY, listScroll.thumbY(0, LIST_H - 2, THUMB_H));
+        pushed.setOffset(nHudKnobX, hudToggle.knobX(0));
+        pushed.setOffset(nLayoutKnobX, layoutToggle.knobX(0));
+        pushed.setOffset(nDevX, Math.round(devPageOffset()));
+        pushed.set(bTabList, pages.is(Page.LIST));
+        pushed.set(bTabDevice, pages.is(Page.DEVICE) && sel != null);
+        pushed.set(bTabSettings, pages.is(Page.SETTINGS));
+        pushed.set(bScrollbar, pages.is(Page.LIST) && listScroll.needsScrollbar());
+        List<HandyDeviceRow> rows = HandyDeviceListClient.rows();
+        pushed.set(bListEmpty, rows.isEmpty());
+        int count = pages.is(Page.LIST) ? listScroll.rowCount() : 0;
+        pushed.set(nCount, count);
+        int selected = HandyDeviceListClient.selectedIndex(handy());
+        for (int r = 0; r < count; r++) {
+            int i = r + listScroll.offset();   // the window's offset, as rowIndexAtRepeat applies it
+            HandyDeviceRow row = i >= 0 && i < rows.size() ? rows.get(i) : null;
+            pushed.set(tRowName, r, row == null ? "" : nameText(row));
+            pushed.set(tRowPos, r, row == null ? "" : posText(row.pos()));
+            if (i == selected) {
+                pushed.set(cRowBg, r, SELECTED_BG);
+                pushed.set(cRowBorder, r, SELECTED_BORDER);
+            } else {
+                pushed.clear(cRowBg, r);   // the pull's defaultArgb: the row's own colour
+                pushed.clear(cRowBorder, r);
             }
-        }
-        return defaultText;
-    }
-
-    @Override
-    public Integer getDynamicColor(String[] classes, String key, int defaultArgb) {
-        switch (key) {
-            case "hd-row-bg": return isSelectedRepeat() ? SELECTED_BG : defaultArgb;
-            case "hd-row-border": return isSelectedRepeat() ? SELECTED_BORDER : defaultArgb;
-            case "hd-row-dot": {
-                HandyDeviceListPayload.Row r = rowAtRepeat();
-                return r == null ? defaultArgb : dotColor(r);
+            if (row == null) {
+                pushed.clear(cRowDot, r);
+            } else {
+                pushed.set(cRowDot, r, dotColor(row));
             }
-            case "hd-nav-list-bg": return !pages.is(Page.SETTINGS) ? NAV_ACTIVE_BG : 0;
-            case "hd-nav-settings-bg": return pages.is(Page.SETTINGS) ? NAV_ACTIVE_BG : 0;
-            case "hd-hud-track-bg": return hudToggle.trackBg();
-            case "hd-hud-knob-bg": return hudToggle.knobBg();
-            case "hd-layout-track-bg": return layoutToggle.trackBg();
-            case "hd-layout-knob-bg": return layoutToggle.knobBg();
-            case "hd-dev-name-border": return nameInput.isFocused() ? SELECTED_BORDER : defaultArgb;
-            default: return null;
-        }
-    }
-
-    @Override
-    public Integer getDynamicNumber(String[] classes, String key, int defaultValue) {
-        switch (key) {
-            case "hd-count": return pages.is(Page.LIST) ? listScroll.rowCount() : 0;
-            case "hd-thumb-y": return listScroll.thumbY(defaultValue, LIST_H - 2, THUMB_H);
-            case "hd-hud-knob-x": return hudToggle.knobX(defaultValue);
-            case "hd-layout-knob-x": return layoutToggle.knobX(defaultValue);
-            // Every node of the device page carries this key with its own x as the default.
-            case "hd-dev-x": return defaultValue + Math.round(devPageOffset());
-            default: return null;
-        }
-    }
-
-    @Override
-    public Boolean getDynamicBool(String[] classes, String key, boolean defaultValue) {
-        switch (key) {
-            case "hd-tab-list": return pages.is(Page.LIST);
-            case "hd-tab-device": return pages.is(Page.DEVICE) && selectedRow() != null;
-            case "hd-tab-settings": return pages.is(Page.SETTINGS);
-            case "hd-scrollbar": return pages.is(Page.LIST) && listScroll.needsScrollbar();
-            case "hd-list-empty": return HandyDeviceListClient.rows().isEmpty();
-            default: return null;
         }
     }
 
@@ -605,7 +646,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
                 // The base closes an open overlay on this class and otherwise hands it here.
                 case "mc-popup-close": onClose(); return;
                 case "hd-row": {
-                    HandyDeviceListPayload.Row r = rowAtRepeat();
+                    HandyDeviceRow r = rowAtRepeat();
                     if (r != null) {
                         select(r.pos());
                         showPage(Page.DEVICE);
@@ -616,12 +657,12 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
                 case "hd-nav-list": showPage(Page.LIST); return;
                 case "hd-nav-settings": showPage(Page.SETTINGS); return;
                 case "hd-dev-name-box": beginName(); return;
-                case "hd-dev-play": sendAtSelected(HandyActionPayload.PLAY); return;
-                case "hd-dev-stop": sendAtSelected(HandyActionPayload.STOP); return;
-                case "hd-dev-test": sendAtSelected(HandyActionPayload.TEST); return;
+                case "hd-dev-play": sendAtSelected(HandyActions.PLAY); return;
+                case "hd-dev-stop": sendAtSelected(HandyActions.STOP); return;
+                case "hd-dev-test": sendAtSelected(HandyActions.TEST); return;
                 case "hd-dev-test-stop":
                     if (!handy().isEmpty()) {
-                        PacketDistributor.sendToServer(HandyActionPayload.of(HandyActionPayload.STOP_TEST));
+                        HandyClient.action(HandyActions.STOP_TEST, 0, null);
                     }
                     return;
                 case "hd-dev-open": openRemote(); return;
@@ -675,7 +716,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         if (h.isEmpty()) return;
         if (nameInput.isFocused()) cancelName();
         h.set(ModDataComponents.HANDY_SELECTED_DEVICE, pos);
-        PacketDistributor.sendToServer(HandyActionPayload.at(HandyActionPayload.SELECT, pos));
+        HandyClient.action(HandyActions.SELECT, 0, pos);
     }
 
     private void sendAtSelected(int action) {
@@ -687,7 +728,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
                     Component.translatable("message.spatialaudiosystem.sound_handy.no_selection").getString(), 0xFFFF55);
             return;
         }
-        PacketDistributor.sendToServer(HandyActionPayload.at(action, pos));
+        HandyClient.action(action, 0, pos);
     }
 
     /**
@@ -709,7 +750,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         }
         // The device screen the server opens next draws this panel behind itself and returns to it.
         behind = this;
-        PacketDistributor.sendToServer(HandyActionPayload.at(HandyActionPayload.OPEN, pos));
+        HandyClient.action(HandyActions.OPEN, 0, pos);
     }
 
     private void setHudShown(boolean shown) {
@@ -717,11 +758,11 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         if (h.isEmpty()) return;
         if (shown) h.remove(ModDataComponents.HANDY_HUD_HIDDEN);
         else h.set(ModDataComponents.HANDY_HUD_HIDDEN, true);
-        PacketDistributor.sendToServer(HandyActionPayload.of(HandyActionPayload.SET_HUD, shown ? 0 : 1));
+        HandyClient.action(HandyActions.SET_HUD, shown ? 0 : 1, null);
     }
 
     private void beginName() {
-        HandyDeviceListPayload.Row r = selectedRow();
+        HandyDeviceRow r = selectedRow();
         if (r == null) return;
         nameInput.setValue(r.name());
         nameInput.focus();
@@ -730,7 +771,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     private void submitName() {
         GlobalPos pos = selectedPos();
         if (pos != null && !handy().isEmpty()) {
-            PacketDistributor.sendToServer(new SetDeviceNamePayload(pos, nameInput.value()));
+            HandyClient.rename(pos, nameInput.value());
         }
         nameInput.blur();
     }

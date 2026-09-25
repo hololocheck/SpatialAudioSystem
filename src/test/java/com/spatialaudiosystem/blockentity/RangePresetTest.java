@@ -1,17 +1,12 @@
 package com.spatialaudiosystem.blockentity;
 
 import com.spatialaudiosystem.audio.SpatialGain;
-import com.spatialaudiosystem.network.SetAttenuationRangePayload;
-import io.netty.buffer.Unpooled;
-import io.netty.handler.codec.DecoderException;
-import net.minecraft.core.BlockPos;
-import net.minecraft.network.FriendlyByteBuf;
+import com.spatialaudiosystem.network.PlaybackDeviceData;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.objenesis.ObjenesisStd;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * SAS-RANGE-001: the playback range a device has without a range board.
@@ -22,8 +17,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * refusal in front of it. The gain rule the value feeds is SpatialGainTest's.
  */
 class RangePresetTest {
-
-    private static final BlockPos POS = new BlockPos(3, 70, 12);
 
     /** A device with no world behind it; the range setter touches nothing but its own field. */
     private static PlaybackDeviceBlockEntity device() {
@@ -98,30 +91,18 @@ class RangePresetTest {
         assertThat(layout).contains("\"wheelKey\":\"pb-range-wheel\"");
     }
 
-    private static SetAttenuationRangePayload decode(int range) {
-        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-        buf.writeBlockPos(POS);
-        buf.writeInt(range);
-        return SetAttenuationRangePayload.STREAM_CODEC.decode(buf);
+    private static boolean accepts(int range) {
+        return PlaybackDeviceData.schema().accepts("set-attenuation-range", range);
     }
 
     @Test
-    @DisplayName("SAS-RANGE-001: a range outside the bounds is refused at decode, not clamped")
-    void aRangeOutsideTheBoundsIsRefusedAtDecode() {
-        assertThat(decode(1).range()).isEqualTo(1);
-        assertThat(decode(64).range()).isEqualTo(64);
-        // The server would clamp these too, but a refused packet is a refused packet and a
+    @DisplayName("SAS-RANGE-001: a range outside the bounds is refused by the codec, not clamped")
+    void aRangeOutsideTheBoundsIsRefusedByTheCodec() {
+        assertThat(accepts(SpatialGain.MIN_RANGE_BLOCKS)).isTrue();
+        assertThat(accepts(SpatialGain.MAX_RANGE_BLOCKS)).isTrue();
+        // The server would clamp these too, but a refused action is a refused action and a
         // clamped one is a silent correction of a peer that named a value it may not.
-        assertThatThrownBy(() -> decode(0)).isInstanceOf(DecoderException.class);
-        assertThatThrownBy(() -> decode(65)).isInstanceOf(DecoderException.class);
-    }
-
-    @Test
-    @DisplayName("SAS-RANGE-001: the payload round-trips inside the bounds")
-    void thePayloadRoundTrips() {
-        SetAttenuationRangePayload sent = new SetAttenuationRangePayload(POS, 37);
-        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-        SetAttenuationRangePayload.STREAM_CODEC.encode(buf, sent);
-        assertThat(SetAttenuationRangePayload.STREAM_CODEC.decode(buf)).isEqualTo(sent);
+        assertThat(accepts(SpatialGain.MIN_RANGE_BLOCKS - 1)).isFalse();
+        assertThat(accepts(SpatialGain.MAX_RANGE_BLOCKS + 1)).isFalse();
     }
 }

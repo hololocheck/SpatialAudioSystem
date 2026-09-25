@@ -1,10 +1,9 @@
 package com.spatialaudiosystem.item;
 
-import com.spatialaudiosystem.network.ClientNotifyPayload;
+import com.spatialaudiosystem.network.HandyData;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
@@ -18,7 +17,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
@@ -92,11 +90,9 @@ public class RangeBoardItem extends Item {
         return InteractionResultHolder.success(stack);
     }
 
-    /** Send a HUD notification to the player via ClientNotifyPayload. */
+    /** A HUD notification for the player, through their tools host (HandyData.notify). */
     private static void sendNotify(Player player, String message, int color) {
-        if (player instanceof ServerPlayer sp) {
-            PacketDistributor.sendToPlayer(sp, new ClientNotifyPayload(message, color));
-        }
+        HandyData.notify(player, message, color);
     }
 
     static BlockPos getLookTargetBlock(Player player, Level level) {

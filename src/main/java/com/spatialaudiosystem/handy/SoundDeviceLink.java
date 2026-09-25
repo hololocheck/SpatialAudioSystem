@@ -2,7 +2,7 @@ package com.spatialaudiosystem.handy;
 
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
 import com.spatialaudiosystem.item.ModDataComponents;
-import com.spatialaudiosystem.network.HandyDeviceListPayload;
+import com.spatialaudiosystem.network.HandyData;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.core.BlockPos;
@@ -11,7 +11,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,9 +71,9 @@ public final class SoundDeviceLink {
     public static void pushList(MinecraftServer server, UUID owner) {
         ServerPlayer player = server.getPlayerList().getPlayer(owner);
         if (player == null) return;
-        List<HandyDeviceListPayload.Row> rows = rows(server, owner);
+        List<HandyDeviceRow> rows = rows(server, owner);
         ensureTarget(player, rows, null);
-        PacketDistributor.sendToPlayer(player, new HandyDeviceListPayload(rows));
+        HandyData.setDevices(player, rows);
     }
 
     /**
@@ -85,7 +84,7 @@ public final class SoundDeviceLink {
      * it is in the list; otherwise the first row does. A handy that already points somewhere is
      * left alone: the player's own choice outranks a convenience.
      */
-    private static void ensureTarget(ServerPlayer player, List<HandyDeviceListPayload.Row> rows,
+    private static void ensureTarget(ServerPlayer player, List<HandyDeviceRow> rows,
                                      @Nullable GlobalPos preferred) {
         ItemStack handy = com.spatialaudiosystem.item.SoundHandyItem.held(player);
         if (handy.isEmpty() || rows.isEmpty()) return;
@@ -101,15 +100,15 @@ public final class SoundDeviceLink {
     private static void pushListTargeting(MinecraftServer server, UUID owner, GlobalPos placed) {
         ServerPlayer player = server.getPlayerList().getPlayer(owner);
         if (player == null) return;
-        List<HandyDeviceListPayload.Row> rows = rows(server, owner);
+        List<HandyDeviceRow> rows = rows(server, owner);
         ensureTarget(player, rows, placed);
-        PacketDistributor.sendToPlayer(player, new HandyDeviceListPayload(rows));
+        HandyData.setDevices(player, rows);
     }
 
     /** The owner's devices with what the server knows right now about each. */
-    public static List<HandyDeviceListPayload.Row> rows(MinecraftServer server, UUID owner) {
+    public static List<HandyDeviceRow> rows(MinecraftServer server, UUID owner) {
         List<SoundDeviceRegistry.Entry> entries = SoundDeviceRegistry.get(server).devicesOf(owner);
-        List<HandyDeviceListPayload.Row> out = new ArrayList<>(entries.size());
+        List<HandyDeviceRow> out = new ArrayList<>(entries.size());
         for (SoundDeviceRegistry.Entry e : entries) {
             boolean loaded = false, playing = false, hasMedium = false, hasBoard = false;
             String mediumFile = "", mediumFormat = "";
@@ -126,7 +125,7 @@ public final class SoundDeviceLink {
                     mediumFormat = medium.getOrDefault(ModDataComponents.AUDIO_FORMAT, "");
                 }
             }
-            out.add(new HandyDeviceListPayload.Row(e.pos(), e.name() == null ? "" : e.name(), loaded, playing, hasMedium, hasBoard,
+            out.add(new HandyDeviceRow(e.pos(), e.name() == null ? "" : e.name(), loaded, playing, hasMedium, hasBoard,
                     mediumFile, mediumFormat));
         }
         return out;

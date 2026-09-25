@@ -23,7 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * The handy's "test" button (spec §2.4): the targeted device's medium, played for its owner
  * only, where the owner stands — the recording screen's preview route
- * ({@code TestPlayRecordingPayload}) sent to one player instead of the level.
+ * (the recording host's {@code test-play}, {@code network.RecordingDeviceData}) sent to one player instead of the
+ * level.
  *
  * <p>The session is keyed on the player's block position at the start, never on the device,
  * so a test cannot take over the device's own world playback session at its position. One

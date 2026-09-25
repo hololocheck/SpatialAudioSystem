@@ -1,0 +1,229 @@
+{
+  "tag": "div",
+  "state": {
+    "fields": {
+      "handy-devices": {
+        "type": "list",
+        "maxLength": 64,
+        "sync": "s2c",
+        "persist": "none",
+        "row": {
+          "handy-dev-dim": {
+            "type": "string",
+            "maxLen": 256
+          },
+          "handy-dev-x": {
+            "type": "int",
+            "min": -33554432,
+            "max": 33554431
+          },
+          "handy-dev-y": {
+            "type": "int",
+            "min": -2048,
+            "max": 2047
+          },
+          "handy-dev-z": {
+            "type": "int",
+            "min": -33554432,
+            "max": 33554431
+          },
+          "handy-dev-name": {
+            "type": "string",
+            "maxLen": 128
+          },
+          "handy-dev-loaded": {
+            "type": "boolean"
+          },
+          "handy-dev-playing": {
+            "type": "boolean"
+          },
+          "handy-dev-medium": {
+            "type": "boolean"
+          },
+          "handy-dev-board": {
+            "type": "boolean"
+          },
+          "handy-dev-file": {
+            "type": "string",
+            "maxLen": 384
+          },
+          "handy-dev-format": {
+            "type": "string",
+            "maxLen": 48
+          }
+        }
+      },
+      "notice": {
+        "type": "string",
+        "maxLen": 768,
+        "sync": "s2c",
+        "persist": "none"
+      },
+      "notice-color": {
+        "type": "int",
+        "min": -2147483648,
+        "max": 2147483647,
+        "sync": "s2c",
+        "persist": "none"
+      },
+      "notice-seq": {
+        "type": "int",
+        "min": 0,
+        "max": 65535,
+        "sync": "s2c",
+        "persist": "none"
+      }
+    },
+    "actions": {
+      "handy-action": {
+        "params": {
+          "action": {
+            "type": "int",
+            "min": 0,
+            "max": 16
+          },
+          "arg": {
+            "type": "int",
+            "min": -1000,
+            "max": 1000
+          },
+          "has-pos": {
+            "type": "boolean"
+          },
+          "dim": {
+            "type": "string",
+            "maxLen": 256
+          },
+          "x": {
+            "type": "int",
+            "min": -33554432,
+            "max": 33554431
+          },
+          "y": {
+            "type": "int",
+            "min": -2048,
+            "max": 2047
+          },
+          "z": {
+            "type": "int",
+            "min": -33554432,
+            "max": 33554431
+          }
+        },
+        "permission": "any",
+        "ratePerSecond": 20
+      },
+      "handy-range-edit": {
+        "params": {
+          "op": {
+            "type": "int",
+            "min": 0,
+            "max": 3
+          },
+          "face": {
+            "type": "int",
+            "min": 0,
+            "max": 5
+          },
+          "value": {
+            "type": "int",
+            "min": -1000,
+            "max": 1000
+          },
+          "has-corner": {
+            "type": "boolean"
+          },
+          "x": {
+            "type": "int",
+            "min": -33554432,
+            "max": 33554431
+          },
+          "y": {
+            "type": "int",
+            "min": -2048,
+            "max": 2047
+          },
+          "z": {
+            "type": "int",
+            "min": -33554432,
+            "max": 33554431
+          }
+        },
+        "permission": "any",
+        "ratePerSecond": 40
+      },
+      "set-device-name": {
+        "params": {
+          "dim": {
+            "type": "string",
+            "maxLen": 256
+          },
+          "x": {
+            "type": "int",
+            "min": -33554432,
+            "max": 33554431
+          },
+          "y": {
+            "type": "int",
+            "min": -2048,
+            "max": 2047
+          },
+          "z": {
+            "type": "int",
+            "min": -33554432,
+            "max": 33554431
+          },
+          "name": {
+            "type": "string",
+            "maxLen": 384
+          }
+        },
+        "permission": "any",
+        "ratePerSecond": 5
+      },
+      "range-board-data": {
+        "params": {
+          "hand": {
+            "type": "enum",
+            "values": [
+              "MAIN_HAND",
+              "OFF_HAND"
+            ]
+          },
+          "r0": {
+            "type": "int",
+            "min": 0,
+            "max": 15
+          },
+          "r1": {
+            "type": "int",
+            "min": 0,
+            "max": 15
+          },
+          "r2": {
+            "type": "int",
+            "min": 0,
+            "max": 15
+          },
+          "r3": {
+            "type": "int",
+            "min": 0,
+            "max": 15
+          },
+          "r4": {
+            "type": "int",
+            "min": 0,
+            "max": 15
+          },
+          "r5": {
+            "type": "int",
+            "min": 0,
+            "max": 15
+          }
+        },
+        "permission": "any",
+        "ratePerSecond": 20
+      }
+    }
+  }
+}

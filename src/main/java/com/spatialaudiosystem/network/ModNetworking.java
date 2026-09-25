@@ -18,7 +18,9 @@ public class ModNetworking {
         //     login instead of reading the new fields as garbage -- which is the exact shape
         //     of a late joiner ignoring its offset (2026-09-02).
         // 1.6 the sound handy: handy_action / set_device_name (C2S) and handy_device_list (S2C).
-        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.6");
+        // 1.7 the screens', the handy's and the range board's own payloads moved to manta:data (MANTA_7_CONCEPT C4):
+        //     sixteen fewer here, and a client on the 1.6 shape is refused at login.
+        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.7");
 
         registrar.playToServer(
                 AudioUploadStartPayload.TYPE,
@@ -32,24 +34,6 @@ public class ModNetworking {
                 AudioUploadChunkPayload::handle
         );
 
-        registrar.playToServer(
-                StartRecordingPayload.TYPE,
-                StartRecordingPayload.STREAM_CODEC,
-                StartRecordingPayload::handle
-        );
-
-        registrar.playToServer(
-                TestPlayRecordingPayload.TYPE,
-                TestPlayRecordingPayload.STREAM_CODEC,
-                TestPlayRecordingPayload::handle
-        );
-
-        registrar.playToServer(
-                PlaylistCommandPayload.TYPE,
-                PlaylistCommandPayload.STREAM_CODEC,
-                PlaylistCommandPayload::handle
-        );
-
         registrar.optional().playToServer(
                 RequestArtPayload.TYPE,
                 RequestArtPayload.STREAM_CODEC,
@@ -57,70 +41,9 @@ public class ModNetworking {
         );
 
         registrar.playToServer(
-                ToggleRangeDisplayPayload.TYPE,
-                ToggleRangeDisplayPayload.STREAM_CODEC,
-                ToggleRangeDisplayPayload::handle
-        );
-
-        registrar.playToServer(
-                PlaybackControlPayload.TYPE,
-                PlaybackControlPayload.STREAM_CODEC,
-                PlaybackControlPayload::handle
-        );
-
-        registrar.playToServer(
                 PlaybackFinishedPayload.TYPE,
                 PlaybackFinishedPayload.STREAM_CODEC,
                 PlaybackFinishedPayload::handle
-        );
-
-        registrar.playToServer(
-                ClearAudioPayload.TYPE,
-                ClearAudioPayload.STREAM_CODEC,
-                ClearAudioPayload::handle
-        );
-
-        registrar.playToServer(
-                ToggleAttenuationPayload.TYPE,
-                ToggleAttenuationPayload.STREAM_CODEC,
-                ToggleAttenuationPayload::handle
-        );
-
-        registrar.playToServer(
-                SetAttenuationRangePayload.TYPE,
-                SetAttenuationRangePayload.STREAM_CODEC,
-                SetAttenuationRangePayload::handle
-        );
-
-        registrar.playToServer(
-                RedstoneRuleCommandPayload.TYPE,
-                RedstoneRuleCommandPayload.STREAM_CODEC,
-                RedstoneRuleCommandPayload::handle
-        );
-        registrar.playToServer(
-                SetRangeBoardDataPayload.TYPE,
-                SetRangeBoardDataPayload.STREAM_CODEC,
-                SetRangeBoardDataPayload::handle
-        );
-        registrar.playToServer(
-                HandyActionPayload.TYPE,
-                HandyActionPayload.STREAM_CODEC,
-                HandyActionPayload::handle
-        );
-        registrar.playToServer(
-                SetDeviceNamePayload.TYPE,
-                SetDeviceNamePayload.STREAM_CODEC,
-                SetDeviceNamePayload::handle
-        );
-        registrar.playToServer(
-                HandyRangeEditPayload.TYPE,
-                HandyRangeEditPayload.STREAM_CODEC,
-                HandyRangeEditPayload::handle
-        );
-        registrar.playToClient(
-                HandyDeviceListPayload.TYPE,
-                HandyDeviceListPayload.STREAM_CODEC,
-                HandyDeviceListPayload::handle
         );
 
         registrar.playToClient(
@@ -154,17 +77,6 @@ public class ModNetworking {
         );
 
         // Optional: won't block connection if server/client versions differ
-        registrar.optional().playToClient(
-                ClientNotifyPayload.TYPE,
-                ClientNotifyPayload.STREAM_CODEC,
-                ClientNotifyPayload::handle
-        );
-
-        registrar.optional().playToClient(
-                RecordingErrorPayload.TYPE,
-                RecordingErrorPayload.STREAM_CODEC,
-                RecordingErrorPayload::handle
-        );
 
         registrar.optional().playToClient(
                 ArtDataPayload.TYPE,

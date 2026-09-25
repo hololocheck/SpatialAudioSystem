@@ -5,8 +5,8 @@ import net.minecraft.core.BlockPos;
 /**
  * Holds the most recent recording-start refusal for the open Recording screen to display.
  *
- * <p>Client-only: written from the {@code RecordingErrorPayload} handler and read by
- * {@code RecordingDeviceScreenV2}. One slot is enough — only the screen the player has open
+ * <p>Client-only: written by {@code RecordingDeviceScreenV2} when the device host's refusal counter moves
+ * ({@code network.RecordingDeviceData}), and read by it. One slot is enough — only the screen the player has open
  * can produce a refusal, and it clears itself after a few seconds.
  */
 public final class RecordingErrorState {

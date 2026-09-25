@@ -327,8 +327,13 @@
   `MantaText.ui / draw / uiWidth / split` に切り替え（`HintHud`、`HudChrome`、`HudToast`、`HudText`、`WikiScreen`、`MarkdownRenderer`、
   `WikiEmbedRegistry`）。SAS 側は `SoundHandyHudRenderer` の描画と幅を `MantaText.draw` / `MantaText.uiWidth` / `HudText.ellipsize` に。
   wrap は raster の advance で折るので描いた幅と一致する。TSU 自前の `drawString`（149 site）は対象外。
-- 検証（v2.6）: 作業ログ 09-05 §10〜§11。Manta 2.5.0 = font 変異 48/48、test 2718、cefReference 5、obf `C67BA1FB…`、ledger 13/13。
-  SAS 266 tests、jar `358EBD5D…`（`-all` = plain = release asset）を client / VM-A に配備、VM-A `Done` 17:55:13、client 起動 OK。
+- 検証（v2.6）: 作業ログ 09-05 §10〜§12。Manta 2.5.0 = font 変異 48/48、test 2718、cefReference 5、obf `C67BA1FB…`、ledger 13/13。
+  SAS 266 tests、変異台帳 181/181（receipt = release bytes）、jar `358EBD5D…`（`-all` = plain = release asset）を client / VM-A に配備、
+  VM-A `Done` 17:55:13、client 起動 OK。二次読み（`99272687ec35e151`）: HUD の計測と描画の統一 HOLDS、action 7 の欠番 HOLDS。
+- **受け入れた所見（Manta 2.5.1 で直す）**: `MantaText.split` はコードポイント単位の raster advance で折るが、raster が拒む run
+  （UI face でない font / `§k` obfuscated / reset 直後の 1 frame）を含む行は `TextRaster.prepare` が行全体を null にして vanilla が描くので、
+  その行だけ maxWidth を超え得る。`ui()` が全 run を UI face に揃えるため通常の文章では起きない。向き = `split` も draw と同じ述語で
+  行単位に判定する。
 
 ## 3. レッドストーン出力（Phase 2）
 

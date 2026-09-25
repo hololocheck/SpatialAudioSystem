@@ -439,9 +439,28 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
      * change detector starts silent, so the load itself is announced here. Chunks that load with
      * nobody online cost nothing (the push finds no player).
      */
+    /** The device's host on manta:data (MANTA_7_CONCEPT C4, network.PlaybackDeviceData): its screen's actions. */
+    private com.manta.api.data.Host dataHost;
+
+    @Override
+    public void setRemoved() {
+        super.setRemoved();
+        if (dataHost != null) {
+            dataHost.close();
+            dataHost = null;
+        }
+    }
+
     @Override
     public void onLoad() {
         super.onLoad();
+        // Not for an entity already removed: NeoForge runs onLoad on the next tick even for one removed since, and
+        // its setRemoved has come and gone - a host opened now is never closed (the next device here throws opening
+        // its own, second reading 13), and a row pushed now puts a device that is gone back in its owner's list.
+        if (isRemoved()) return;
+        if (dataHost == null && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            dataHost = com.spatialaudiosystem.network.PlaybackDeviceData.open(this, serverLevel);
+        }
         if (level != null && !level.isClientSide() && getOwnerUUID() != null) {
             // The state pushed here is also the detector's baseline. Without that, a device
             // saved as playing is pushed as playing, the first tick's reconcile stops it, and

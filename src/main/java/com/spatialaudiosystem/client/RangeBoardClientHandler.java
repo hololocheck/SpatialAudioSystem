@@ -5,7 +5,6 @@ import com.manta.api.hud.ScrollCooldown;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
-import com.spatialaudiosystem.network.SetRangeBoardDataPayload;
 import com.spatialaudiosystem.screen.RangeBoardHudRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.InteractionHand;
@@ -14,7 +13,6 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.InputEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -78,8 +76,12 @@ public class RangeBoardClientHandler {
         int dirIdx = RangeBoardHudRenderer.getDirectionIndex(RangeBoardHudRenderer.currentMode);
         ranges.set(dirIdx, Math.max(0, Math.min(15, ranges.get(dirIdx) + change)));
 
-        // Local update for immediate feedback, then sync to the server.
+        // Local update for immediate feedback, then sync to the server - every face inside the board's 0..15,
+        // which the action declares (the server clamped each value before; a stored value outside the range
+        // would now be refused whole instead).
+        for (int i = 0; i < ranges.size(); i++) ranges.set(i, Math.max(0, Math.min(15, ranges.get(i))));
         stack.set(ModDataComponents.ATTENUATION_RANGES, new ArrayList<>(ranges));
-        PacketDistributor.sendToServer(new SetRangeBoardDataPayload(hand, ranges));
+        HandyClient.send("range-board-data", hand.name(), ranges.get(0), ranges.get(1), ranges.get(2),
+                ranges.get(3), ranges.get(4), ranges.get(5));
     }
 }

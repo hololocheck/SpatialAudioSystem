@@ -17,7 +17,8 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 /**
  * A client reporting that a sound it was playing has run to its end.
  *
- * <p>Split out from {@link PlaybackControlPayload} because the two cannot carry the same
+ * <p>Split out from PlaybackControlPayload (the screen's play / stop, now the device host's {@code playback}
+ * action, {@link PlaybackDeviceData}) because the two cannot carry the same
  * authority: a stop command comes from an open screen, while this arrives from a client
  * that has no screen open and may be nowhere near the device. Keeping them on one packet
  * meant the stop command could not be checked without breaking completion.

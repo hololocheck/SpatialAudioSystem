@@ -82,6 +82,30 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         return inventory;
     }
 
+    /** The device's host on manta:data (MANTA_7_CONCEPT C4, network.RecordingDeviceData): its screen's actions. */
+    private com.manta.api.data.Host dataHost;
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        // Not for an entity already removed: NeoForge runs onLoad on the next tick even for one removed since, and
+        // its setRemoved has come and gone - a host opened now is never closed, and the next device here throws
+        // opening its own (second reading 13).
+        if (isRemoved()) return;
+        if (dataHost == null && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            dataHost = com.spatialaudiosystem.network.RecordingDeviceData.open(this, serverLevel);
+        }
+    }
+
+    @Override
+    public void setRemoved() {
+        super.setRemoved();
+        if (dataHost != null) {
+            dataHost.close();
+            dataHost = null;
+        }
+    }
+
     @Override
     @Nullable
     public java.util.UUID getOwnerUUID() {

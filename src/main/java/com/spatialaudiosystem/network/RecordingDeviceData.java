@@ -1,5 +1,8 @@
 package com.spatialaudiosystem.network;
 
+import com.manta.api.data.Host;
+import com.manta.api.data.MantaData;
+import com.manta.api.data.Schema;
 import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.audio.AudioStorage;
 import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
@@ -7,55 +10,77 @@ import com.spatialaudiosystem.blockentity.RecordingDeviceBlockEntity;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.server.ServerInteractionGuard;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
- * C2S: preview ("test play") the finished medium in a recording device's output slot, or stop
- * it. Reuses the normal playback broadcast, so the preview plays at the device for every
- * nearby client just like a playback device would.
+ * The recording device's actions on manta:data (MANTA_7_CONCEPT C4): what ClearAudioPayload, StartRecordingPayload
+ * and TestPlayRecordingPayload carried, declared once in the device layout's {@code state} member, and the start
+ * refusal RecordingErrorPayload sent back. The block entity's {@link Host} admits exactly the players
+ * {@link ServerInteractionGuard} admitted - the sender has this device's menu open, in its level, still valid,
+ * with the owner's access - asked again on every action.
+ *
+ * <p>The refusal is an event, not state: {@code recording-error} holds the reason and {@code recording-error-seq}
+ * moves, and the screen shows the reason when it sees the counter move. It goes to every viewer of the device,
+ * not only to the one who pressed start (the payload went to that player alone): the device refused to start.</p>
  */
-public record TestPlayRecordingPayload(BlockPos pos, boolean start) implements CustomPacketPayload {
+public final class RecordingDeviceData {
+
+    /** The layout that declares the state, read from the jar on both sides (the same bytes, the same hash). */
+    static final String LAYOUT = "/assets/spatialaudiosystem/layouts/recording-device.json";
 
     private static final int[] NO_ATTENUATION = {8, 8, 8, 8, 8, 8};
 
-    public static final CustomPacketPayload.Type<TestPlayRecordingPayload> TYPE =
-            new CustomPacketPayload.Type<>(
-                    ResourceLocation.fromNamespaceAndPath(SpatialAudioSystem.MOD_ID, "test_play_recording"));
+    private static Schema schema;
 
-    public static final StreamCodec<FriendlyByteBuf, TestPlayRecordingPayload> STREAM_CODEC =
-            StreamCodec.of(TestPlayRecordingPayload::write, TestPlayRecordingPayload::read);
-
-    private static void write(FriendlyByteBuf buf, TestPlayRecordingPayload p) {
-        buf.writeBlockPos(p.pos);
-        buf.writeBoolean(p.start);
+    private RecordingDeviceData() {
     }
 
-    private static TestPlayRecordingPayload read(FriendlyByteBuf buf) {
-        return new TestPlayRecordingPayload(buf.readBlockPos(), buf.readBoolean());
+    public static synchronized Schema schema() {
+        if (schema == null) {
+            schema = MantaData.schemaResource(SpatialAudioSystem.class, LAYOUT);
+        }
+        return schema;
     }
 
-    public static void handle(TestPlayRecordingPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            RecordingDeviceBlockEntity device =
-                    ServerInteractionGuard.recordingDevice(context.player(), payload.pos);
-            if (device == null || !(context.player().level() instanceof ServerLevel level)) return;
+    public static String channel(Level level, BlockPos pos) {
+        return MantaData.channel(SpatialAudioSystem.MOD_ID, "recording", level.dimension(), pos);
+    }
 
-            if (payload.start) {
-                startPreview(level, device, payload.pos);
-            } else {
-                stopPreview(level, payload.pos);
+    /** The device's host, on the server thread. Closed by the block entity with itself. */
+    public static Host open(RecordingDeviceBlockEntity device, ServerLevel level) {
+        BlockPos pos = device.getBlockPos();
+        Host host = MantaData.host(level.getServer(), channel(level, pos), schema(),
+                player -> ServerInteractionGuard.recordingDevice(player, pos) == device);
+        host.on("clear-audio", (args, player) -> {
+            device.clearPendingAudio();
+            device.clearMediaAudioData();
+        });
+        host.on("start-recording", (args, player) -> {
+            int result = device.startRecording();
+            if (result != RecordingDeviceBlockEntity.START_OK) {
+                host.set("recording-error", result);
+                host.set("recording-error-seq", ((Integer) host.get("recording-error-seq") + 1) & 0xFFFF);
             }
         });
+        host.on("test-play", (args, player) -> {
+            if ((Boolean) args.get(0)) {
+                startPreview(level, device, pos);
+            } else {
+                stopPreview(level, pos);
+            }
+        });
+        return host;
     }
 
+    /**
+     * Preview ("test play") the finished medium in the output slot, or the pending upload. Reuses the normal
+     * playback broadcast, so the preview plays at the device for every nearby client just like a playback
+     * device would.
+     */
     private static void startPreview(ServerLevel level, RecordingDeviceBlockEntity device, BlockPos pos) {
         byte[] audio;
         String format;
@@ -95,10 +120,5 @@ public record TestPlayRecordingPayload(BlockPos pos, boolean start) implements C
         for (ServerPlayer sp : level.players()) {
             PacketDistributor.sendToPlayer(sp, stop);
         }
-    }
-
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
     }
 }

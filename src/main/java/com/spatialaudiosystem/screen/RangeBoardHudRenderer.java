@@ -49,7 +49,7 @@ public class RangeBoardHudRenderer {
     /** Selected mode (0/1/2). Shared with RangeRenderer for orange-box visibility; not persisted. */
     public static int currentMode = MODE_NORMAL;
 
-    // Transient notification (pos set / range cleared), set by RangeBoardItem / ClientNotifyPayload.
+    // Transient notification (pos set / range cleared), set through the tools host's notice (client.HandyClient).
     private static String notificationMessage = null;
     private static int notificationColor = 0xFFFFFF;
     private static long notificationExpiry = 0;
@@ -167,8 +167,8 @@ public class RangeBoardHudRenderer {
     }
 
     /**
-     * Show a notification on the Range Board HUD (below the badge). Called by RangeBoardItem /
-     * {@code ClientNotifyPayload}. The message is shown verbatim, so the caller supplies it
+     * Show a notification on the Range Board HUD (below the badge). Called for the tools host's notice
+     * ({@code client.HandyClient}, the range board's own messages among them). The message is shown verbatim, so the caller supplies it
      * already localized.
      */
     public static void showNotification(String message, int color, int durationMs) {

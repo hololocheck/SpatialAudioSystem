@@ -3,22 +3,24 @@ package com.spatialaudiosystem.screen;
 import com.manta.api.controller.ToggleSwitchController;
 import com.manta.api.screen.JsonLayoutEngine;
 import com.manta.api.screen.JsonLayoutScreen;
+import com.manta.api.screen.PageLayer;
+import com.manta.api.state.BoolSlot;
+import com.manta.api.state.ColorSlot;
+import com.manta.api.state.MantaState;
+import com.manta.api.state.NumberSlot;
+import com.manta.api.state.TextSlot;
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
 import com.spatialaudiosystem.client.ClientArtCache;
 import com.spatialaudiosystem.item.ModDataComponents;
 import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.menu.PlaybackDeviceMenu;
-import com.spatialaudiosystem.network.PlaybackControlPayload;
-import com.spatialaudiosystem.network.PlaylistCommandPayload;
-import com.spatialaudiosystem.network.ToggleAttenuationPayload;
-import com.spatialaudiosystem.network.ToggleRangeDisplayPayload;
+import com.spatialaudiosystem.network.PlaybackDeviceData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.UUID;
@@ -34,6 +36,12 @@ import java.util.UUID;
  * the block entity's playlist slots, repositioned each frame over their row frames.
  */
 public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu> {
+
+    /** Every value on this screen's pages is pushed (MANTA_7_CONCEPT §4.2): a page asks it nothing. */
+    @Override
+    protected boolean pushOnly() {
+        return true;
+    }
 
     private static final int COLOR_PLAYING = 0xFF55FF55;
     private static final int COLOR_STOPPED = 0xFFAAAAAA;
@@ -101,7 +109,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             () -> attenuationOn,
             v -> {
                 attenuationOn = v;
-                PacketDistributor.sendToServer(new ToggleAttenuationPayload(pos()));
+                send("toggle-attenuation");
             });
 
     private final ToggleSwitchController rangeToggle = new ToggleSwitchController(
@@ -109,7 +117,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             () -> rangeVisible,
             v -> {
                 rangeVisible = v;
-                PacketDistributor.sendToServer(new ToggleRangeDisplayPayload(pos()));
+                send("toggle-range-display");
             });
 
     /** Schedule mode: bars the media slot. Flipped from inside the schedule popup now. */
@@ -130,8 +138,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             () -> be().isRedstoneEnabled(),
             v -> {
                 be().setRedstoneEnabled(v);   // optimistic on the client entity; the update tag confirms
-                PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
-                        pos(), com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_TOGGLE_ENABLED, 0, 0));
+                send("redstone-rule", PlaybackDeviceData.RULE_TOGGLE_ENABLED, 0, 0);
             });
 
     private final ToggleSwitchController schedulePlaybackToggle = new ToggleSwitchController(
@@ -139,9 +146,37 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             () -> scheduleModeOn,
             v -> {
                 scheduleModeOn = v;
-                PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                        pos(), PlaylistCommandPayload.OP_TOGGLE_MODE, 0, 0));
+                send("playlist", PlaybackDeviceData.PLAYLIST_TOGGLE_MODE, 0, 0);
             });
+
+    // ===== Manta 7 push (Phase 4, 2026-09-23) =====
+    // Every value of the three pages is WRITTEN here, each frame before the engine draws (render):
+    // the name box follows every key, so a frame is the cadence the pull had - an unchanged value
+    // costs nothing. The screen overrides no getDynamic*. A page's handles are taken when it opens
+    // (pageOpened): the main dialog once, the schedule / redstone dialog each time the overlay
+    // opens. The rows of both lists are pushed per row (row r shows list entry r + the window's
+    // offset, as entryAtRow / ruleIndexAtRow resolve it); a row the pull answered with null is
+    // pushed "none" (clear), so it keeps the template's own colour. The toggles' knobs and the
+    // scroll thumbs are OFFSETS from each node's static value (the pull answered default + delta).
+    // The hint toggle, the entrance animations and the transitions are the base screen's.
+    private MantaState pushed;
+    private TextSlot tTitle, tStatus, tFile, tFormat, tAttenRange;
+    private ColorSlot cTitleBorder, cStatus, cAttenTrack, cAttenKnob, cRangeTrack, cRangeKnob,
+            cLoopColor, cLoopBorder, cSchedColor, cSchedBorder, cSchedBg, cAttenRangeColor, cOwner;
+    private NumberSlot nAttenKnobX, nRangeKnobX;
+    private BoolSlot bMediaLocked;
+    /** The schedule dialog's page while it is the open overlay, else null. */
+    private MantaState pushedSched;
+    private NumberSlot sCount, sPlayKnobX, sThumbY, sFrameY;
+    private TextSlot sIndex, sCountText, sMediaInfo;
+    private ColorSlot sRowBg, sRowBorder, sFrameBg, sFrameBorder, sPlayTrack, sPlayKnob;
+    private BoolSlot sFrameVisible, sScrollbar;
+    /** The redstone dialog's page while it is the open overlay, else null. */
+    private MantaState pushedRs;
+    private NumberSlot rCount, rEnabledKnobX, rThumbY;
+    private TextSlot rTrigger, rStrength, rDelay, rLength, rEntry;
+    private ColorSlot rLengthColor, rEntryColor, rEnabledTrack, rEnabledKnob;
+    private BoolSlot rScrollbar;
 
     public PlaybackDeviceScreenV2(PlaybackDeviceMenu menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
@@ -257,13 +292,6 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         return idx < 0 ? -1 : idx + redstoneScroll.offset();
     }
 
-    /** The rule under the repeat row being drawn, or null outside the rows. */
-    private com.spatialaudiosystem.redstone.RedstoneRule redstoneRuleAtRow() {
-        int idx = ruleIndexAtRow();
-        java.util.List<com.spatialaudiosystem.redstone.RedstoneRule> rules = be().getRedstoneRules();
-        return idx >= 0 && idx < rules.size() ? rules.get(idx) : null;
-    }
-
     /** The schedule entry under the repeat row being resolved (window offset applied), or -1. */
     private int entryAtRow() {
         int idx = JsonLayoutEngine.currentRepeatIndex();
@@ -314,196 +342,263 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         return this.menu.getBlockEntity();
     }
 
+    // getDynamicText / Color / Number / Bool: gone - see pushAll(). The expressions are the ones the
+    // pull answered with, moved into the helpers below; a row's index is now the loop's, not
+    // currentRepeatIndex's.
+
     @Override
-    public String getDynamicText(String[] classes, String defaultText) {
+    protected void pageOpened(Object page, PageLayer layer) {
+        if (layer == PageLayer.PRIMARY) {
+            pushed = MantaState.of(page);
+            tTitle = pushed.text("pb-title");
+            tStatus = pushed.text("pb-status");
+            tFile = pushed.text("pb-file");
+            tFormat = pushed.text("pb-format");
+            tAttenRange = pushed.text("pb-atten-range");
+            cTitleBorder = pushed.color("pb-title-border");
+            cStatus = pushed.color("pb-status-color");
+            cAttenTrack = pushed.color("pb-atten-track-bg");
+            cAttenKnob = pushed.color("pb-atten-knob-bg");
+            cRangeTrack = pushed.color("pb-range-track-bg");
+            cRangeKnob = pushed.color("pb-range-knob-bg");
+            cLoopColor = pushed.color("pb-loop-btn-color");
+            cLoopBorder = pushed.color("pb-loop-btn-border");
+            cSchedColor = pushed.color("pb-sched-btn-color");
+            cSchedBorder = pushed.color("pb-sched-btn-border");
+            cSchedBg = pushed.color("pb-sched-btn-bg");
+            cAttenRangeColor = pushed.color("pb-atten-range-color");
+            cOwner = pushed.color("owner-border");
+            nAttenKnobX = pushed.number("pb-atten-knob-x");
+            nRangeKnobX = pushed.number("pb-range-knob-x");
+            bMediaLocked = pushed.bool("pb-media-locked");
+            pushed.textByKeyOnly();
+        } else if (layer == PageLayer.OVERLAY && schedulePopup.isOpen()) {
+            // overlayJson(): the schedule wins when both flags are up, so the page is its layout.
+            pushedRs = null;
+            pushedSched = MantaState.of(page);
+            sCount = pushedSched.number("pb-entry-count");
+            sPlayKnobX = pushedSched.number("pb-schedplay-knob-x");
+            sThumbY = pushedSched.number("pb-sched-thumb-y");
+            sFrameY = pushedSched.number("pb-playing-frame-y");
+            sIndex = pushedSched.text("pb-entry-index");
+            sCountText = pushedSched.text("pb-count-display");
+            sMediaInfo = pushedSched.text("pb-media-info");
+            sRowBg = pushedSched.color("pb-entry-row-bg");
+            sRowBorder = pushedSched.color("pb-entry-row-border");
+            sFrameBg = pushedSched.color("pb-playing-frame-bg");
+            sFrameBorder = pushedSched.color("pb-playing-frame-border");
+            sPlayTrack = pushedSched.color("pb-schedplay-track-bg");
+            sPlayKnob = pushedSched.color("pb-schedplay-knob-bg");
+            sFrameVisible = pushedSched.bool("pb-playing-frame-visible");
+            sScrollbar = pushedSched.bool("pb-sched-scrollbar");
+            pushedSched.textByKeyOnly();
+            // The row slots are the screen's with no entry yet (an empty schedule has no row to push): none is
+            // what the pull answered outside a row. Each row that exists is pushed in pushSchedule.
+            pushedSched.clear(sIndex);
+            pushedSched.clear(sCountText);
+            pushedSched.clear(sMediaInfo);
+            pushedSched.clear(sRowBg);
+            pushedSched.clear(sRowBorder);
+        } else if (layer == PageLayer.OVERLAY && redstonePopup.isOpen()) {
+            pushedSched = null;
+            pushedRs = MantaState.of(page);
+            rCount = pushedRs.number("pb-rs-count");
+            rEnabledKnobX = pushedRs.number("pb-rs-enabled-knob-x");
+            rThumbY = pushedRs.number("pb-rs-thumb-y");
+            rTrigger = pushedRs.text("pb-rs-trigger");
+            rStrength = pushedRs.text("pb-rs-strength");
+            rDelay = pushedRs.text("pb-rs-delay");
+            rLength = pushedRs.text("pb-rs-length");
+            rEntry = pushedRs.text("pb-rs-entry");
+            rLengthColor = pushedRs.color("pb-rs-length-color");
+            rEntryColor = pushedRs.color("pb-rs-entry-color");
+            rEnabledTrack = pushedRs.color("pb-rs-enabled-track-bg");
+            rEnabledKnob = pushedRs.color("pb-rs-enabled-knob-bg");
+            rScrollbar = pushedRs.bool("pb-rs-scrollbar");
+            pushedRs.textByKeyOnly();
+            // As the schedule's: the rules can be empty, and each row that exists is pushed in pushRedstone.
+            pushedRs.clear(rTrigger);
+            pushedRs.clear(rStrength);
+            pushedRs.clear(rDelay);
+            pushedRs.clear(rLength);
+            pushedRs.clear(rEntry);
+            pushedRs.clear(rLengthColor);
+        }
+        pushAll();
+    }
+
+    /** Every value of every open page, from the expressions the pull answered with. An unchanged value costs nothing. */
+    private void pushAll() {
+        pushMain();
+        pushSchedule();
+        pushRedstone();
+    }
+
+    private void pushMain() {
+        if (pushed == null || !pushed.isOpen()) return;
         PlaybackDeviceBlockEntity be = be();
-        for (String c : classes) {
-            switch (c) {
-                case "pb-title": {
-                    if (nameInput.isFocused()) return nameInput.display();
-                    String name = be.getDeviceName();
-                    return name != null ? name
-                            : Component.translatable("gui.spatialaudiosystem.playback_name_placeholder").getString();
-                }
-                case "pb-status":
-                    return be.isPlaying()
-                            ? Component.translatable("gui.spatialaudiosystem.status_playing").getString()
-                            : Component.translatable("gui.spatialaudiosystem.status_stopped").getString();
-                case "pb-file": {
-                    if (scheduleModeOn) {
-                        int tracks = 0;
-                        for (int i = 0; i < be.getEntryCount(); i++) {
-                            if (!be.getPlaylist().getStackInSlot(i).isEmpty()) tracks++;
-                        }
-                        return Component.translatable(
-                                "gui.spatialaudiosystem.tracks_scheduled", tracks).getString();
-                    }
-                    ItemStack media = be.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.MEDIA_SLOT);
-                    String name = media.get(ModDataComponents.AUDIO_FILE_NAME);
-                    if (name == null) {
-                        return Component.translatable("gui.spatialaudiosystem.no_media").getString();
-                    }
-                    return trimToFit(Component.translatable(
-                            "gui.spatialaudiosystem.file_prefix", name).getString(), FILE_MAX_W);
-                }
-                case "pb-format": {
-                    if (scheduleModeOn) {
-                        int idx = be.getPlayingEntry();
-                        String name = idx < 0 ? null
-                                : be.getPlaylist().getStackInSlot(idx).get(ModDataComponents.AUDIO_FILE_NAME);
-                        if (name == null) return "";
-                        return trimToFit(Component.translatable(
-                                "gui.spatialaudiosystem.now_playing", name).getString(), FILE_MAX_W);
-                    }
-                    ItemStack media = be.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.MEDIA_SLOT);
-                    if (!media.has(ModDataComponents.AUDIO_FILE_NAME)) return "";
-                    String fmt = media.getOrDefault(ModDataComponents.AUDIO_FORMAT, "unknown");
-                    return Component.translatable(
-                            "gui.spatialaudiosystem.format_prefix", fmt.toUpperCase()).getString();
-                }
-                case "pb-rs-trigger": {
-                    var rule = redstoneRuleAtRow();
-                    return rule == null ? "" : Component.translatable(
-                            "gui.spatialaudiosystem.rs_trigger_" + rule.trigger().name().toLowerCase(java.util.Locale.ROOT)).getString();
-                }
-                case "pb-rs-strength": {
-                    var rule = redstoneRuleAtRow();
-                    return rule == null ? "" : String.valueOf(rule.strength());
-                }
-                case "pb-rs-delay": {
-                    var rule = redstoneRuleAtRow();
-                    return rule == null ? "" : seconds(rule.delayTicks());
-                }
-                case "pb-rs-length": {
-                    var rule = redstoneRuleAtRow();
-                    if (rule == null) return "";
-                    // A lamp has no length; the column shows a dash and is greyed (colorKey).
-                    return rule.trigger().isPulse() ? seconds(rule.lengthTicks())
-                            : Component.translatable("gui.spatialaudiosystem.rs_na").getString();
-                }
-                case "pb-rs-entry": {
-                    var rule = redstoneRuleAtRow();
-                    return rule == null ? "" : entryScopeText(rule);
-                }
-                case "pb-atten-range": {
-                    if (rangeBoardInserted()) {
-                        return Component.translatable("gui.spatialaudiosystem.range_board_active").getString();
-                    }
-                    int range = be.getAttenuationRange();
-                    String text = Component.translatable(
-                            "gui.spatialaudiosystem.attenuation_range", range).getString();
-                    if (!be.isAttenuationMode()) {
-                        // Editable, kept, but not what the sound uses until attenuation is on. A
-                        // short suffix instead of the jukebox label: the row is 192 px wide and
-                        // nothing clips it, so the first version's long suffix ran past the dialog.
-                        text += Component.translatable("gui.spatialaudiosystem.range_unused").getString();
-                    } else if (range == com.spatialaudiosystem.audio.SpatialGain.JUKEBOX_RANGE_BLOCKS) {
-                        text += Component.translatable("gui.spatialaudiosystem.range_jukebox").getString();
-                    }
-                    return trimToFit(text, FILE_MAX_W);
-                }
-                case "pb-entry-index": {
-                    int idx = entryAtRow();
-                    return idx >= 0 ? String.valueOf(idx + 1) : "";
-                }
-                case "pb-count-display": {
-                    int idx = entryAtRow();
-                    if (idx < 0) return "";
-                    return TIMES + (be.isLoopEntry(idx)
-                            ? ENDLESS_COUNT
-                            : String.valueOf(be.getPlayCount(idx)));
-                }
-                case "pb-media-info": {
-                    int idx = entryAtRow();
-                    if (idx < 0) return "";
-                    String name = be.getPlaylist().getStackInSlot(idx).get(ModDataComponents.AUDIO_FILE_NAME);
-                    if (name == null) return Component.translatable("gui.spatialaudiosystem.entry_empty").getString();
-                    return trimToFit(name, 148);
-                }
-                default:
-            }
+        pushed.set(tTitle, titleText());
+        pushed.set(tStatus, be.isPlaying()
+                ? Component.translatable("gui.spatialaudiosystem.status_playing").getString()
+                : Component.translatable("gui.spatialaudiosystem.status_stopped").getString());
+        pushed.set(tFile, fileText());
+        pushed.set(tFormat, formatText());
+        pushed.set(tAttenRange, attenuationRangeText());
+        if (nameInput.isFocused()) {
+            pushed.set(cTitleBorder, 0xFF4FC3F7);
+        } else {
+            pushed.clear(cTitleBorder);   // the pull's defaultArgb: the box's own border
         }
-        return null;
-    }
-
-    @Override
-    public Integer getDynamicColor(String[] classes, String key, int defaultArgb) {
-        switch (key) {
-            case "pb-title-border": return nameInput.isFocused() ? 0xFF4FC3F7 : defaultArgb;
-            case "pb-status-color":
-                return be().isPlaying() ? COLOR_PLAYING : COLOR_STOPPED;
-            case "pb-atten-track-bg": return attenuationToggle.trackBg();
-            case "pb-atten-knob-bg":  return attenuationToggle.knobBg();
-            case "pb-range-track-bg": return rangeToggle.trackBg();
-            case "pb-range-knob-bg":  return rangeToggle.knobBg();
-            case "pb-rs-enabled-track-bg": return redstoneToggle.trackBg();
-            case "pb-rs-enabled-knob-bg":  return redstoneToggle.knobBg();
-            case "pb-rs-length-color": {
-                var rule = redstoneRuleAtRow();
-                return rule != null && rule.trigger().isPulse() ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE;
-            }
-            case "pb-rs-entry-color":
-                // Editable either way; grey says it has no effect until the schedule plays.
-                return scheduleModeOn ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE;
-            case "pb-schedplay-track-bg": return schedulePlaybackToggle.trackBg();
-            case "pb-schedplay-knob-bg":  return schedulePlaybackToggle.knobBg();
-            case "pb-loop-btn-color":  return normalLoopOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT;
-            case "pb-loop-btn-border": return normalLoopOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_BORDER;
-            case "pb-sched-btn-color":  return scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT;
-            case "pb-sched-btn-border": return scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_BORDER;
-            case "pb-sched-btn-bg":     return scheduleModeOn ? 0x1AFFC107 : 0x0DFFFFFF;
-            case "pb-atten-range-color":
-                // Amber only while the sound is shaped by this value (no box, attenuation on).
-                return PlaybackDeviceBlockEntity.presetInEffect(rangeBoardInserted(), be().isAttenuationMode())
-                        ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE;
-            case "owner-border":
-                return com.manta.api.hud.OwnerAccess.ringColor(be().isPrivateMode());
-            case "pb-entry-row-bg": {
-                int idx = entryAtRow();
-                return idx == be().getPlayingEntry() ? PLAYING_HL_BG : null;
-            }
-            case "pb-entry-row-border": {
-                int idx = entryAtRow();
-                return idx == be().getPlayingEntry() ? PLAYING_HL_BORDER : null;
-            }
-            case "pb-playing-frame-bg":     return PLAYING_HL_BG;
-            case "pb-playing-frame-border": return PLAYING_HL_BORDER;
-            default:
-                return null;
-        }
-    }
-
-    @Override
-    public Integer getDynamicNumber(String[] classes, String key, int defaultValue) {
-        switch (key) {
-            case "pb-atten-knob-x": return attenuationToggle.knobX(defaultValue);
-            case "pb-schedplay-knob-x": return schedulePlaybackToggle.knobX(defaultValue);
-            case "pb-range-knob-x": return rangeToggle.knobX(defaultValue);
-            case "pb-entry-count":  return schedulePopup.isOpen() ? scheduleScroll.rowCount() : 0;
-            case "pb-rs-count":     return redstonePopup.isOpen() ? redstoneScroll.rowCount() : 0;
-            case "pb-rs-enabled-knob-x": return redstoneToggle.knobX(defaultValue);
-            case "pb-sched-thumb-y": return scheduleScroll.thumbY(defaultValue, LIST_H - 2, THUMB_H);
-            case "pb-rs-thumb-y":    return redstoneScroll.thumbY(defaultValue, RS_LIST_H - 2, THUMB_H);
-            case "pb-playing-frame-y": {
-                int row = Math.max(0, windowRowOf(be().getPlayingEntry()));
-                return FIRST_ROW_Y + row * ROW_STRIDE;
-            }
-            default:
-                return null;
-        }
-    }
-
-    @Override
-    public Boolean getDynamicBool(String[] classes, String key, boolean defaultValue) {
-        if ("pb-playing-frame-visible".equals(key)) {
-            return schedulePopup.isOpen() && windowRowOf(be().getPlayingEntry()) >= 0;
-        }
-        if ("pb-sched-scrollbar".equals(key)) return scheduleScroll.needsScrollbar();
-        if ("pb-rs-scrollbar".equals(key)) return redstoneScroll.needsScrollbar();
+        pushed.set(cStatus, be.isPlaying() ? COLOR_PLAYING : COLOR_STOPPED);
+        pushed.set(cAttenTrack, attenuationToggle.trackBg());
+        pushed.set(cAttenKnob, attenuationToggle.knobBg());
+        pushed.set(cRangeTrack, rangeToggle.trackBg());
+        pushed.set(cRangeKnob, rangeToggle.knobBg());
+        pushed.set(cLoopColor, normalLoopOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT);
+        pushed.set(cLoopBorder, normalLoopOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_BORDER);
+        pushed.set(cSchedColor, scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_TEXT);
+        pushed.set(cSchedBorder, scheduleModeOn ? COLOR_SCHED_ON : COLOR_SCHED_OFF_BORDER);
+        pushed.set(cSchedBg, scheduleModeOn ? 0x1AFFC107 : 0x0DFFFFFF);
+        // Amber only while the sound is shaped by this value (no box, attenuation on).
+        int attenRangeColor = PlaybackDeviceBlockEntity.presetInEffect(rangeBoardInserted(), be().isAttenuationMode())
+                ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE;
+        pushed.set(cAttenRangeColor, attenRangeColor);
+        pushed.set(cOwner, com.manta.api.hud.OwnerAccess.ringColor(be.isPrivateMode()));
+        // Offsets: knobX is default + delta, so its delta is its answer for 0.
+        pushed.setOffset(nAttenKnobX, attenuationToggle.knobX(0));
+        pushed.setOffset(nRangeKnobX, rangeToggle.knobX(0));
         // The media-slot ✕ is an engine element so it rides the open/close animation;
         // a Java overdraw sat still while the rest of the dialog scaled.
-        if ("pb-media-locked".equals(key)) return scheduleModeOn;
-        return null;
+        pushed.set(bMediaLocked, scheduleModeOn);
+    }
+
+    private void pushSchedule() {
+        if (pushedSched == null || !pushedSched.isOpen()) return;
+        MantaState st = pushedSched;
+        PlaybackDeviceBlockEntity be = be();
+        int count = schedulePopup.isOpen() ? scheduleScroll.rowCount() : 0;
+        st.set(sCount, count);
+        int playing = be.getPlayingEntry();
+        for (int r = 0; r < count; r++) {
+            int idx = r + scheduleScroll.offset();
+            st.set(sIndex, r, String.valueOf(idx + 1));
+            st.set(sCountText, r, TIMES + (be.isLoopEntry(idx)
+                    ? ENDLESS_COUNT
+                    : String.valueOf(be.getPlayCount(idx))));
+            st.set(sMediaInfo, r, mediaInfoText(idx));
+            if (idx == playing) {
+                st.set(sRowBg, r, PLAYING_HL_BG);
+                st.set(sRowBorder, r, PLAYING_HL_BORDER);
+            } else {
+                st.clear(sRowBg, r);   // the pull answered null: the row's own colour
+                st.clear(sRowBorder, r);
+            }
+        }
+        st.set(sFrameBg, PLAYING_HL_BG);
+        st.set(sFrameBorder, PLAYING_HL_BORDER);
+        st.set(sPlayTrack, schedulePlaybackToggle.trackBg());
+        st.set(sPlayKnob, schedulePlaybackToggle.knobBg());
+        st.setOffset(sPlayKnobX, schedulePlaybackToggle.knobX(0));
+        st.setOffset(sThumbY, scheduleScroll.thumbY(0, LIST_H - 2, THUMB_H));
+        st.set(sFrameY, FIRST_ROW_Y + Math.max(0, windowRowOf(playing)) * ROW_STRIDE);
+        st.set(sFrameVisible, schedulePopup.isOpen() && windowRowOf(playing) >= 0);
+        st.set(sScrollbar, scheduleScroll.needsScrollbar());
+    }
+
+    private void pushRedstone() {
+        if (pushedRs == null || !pushedRs.isOpen()) return;
+        MantaState st = pushedRs;
+        int count = redstonePopup.isOpen() ? redstoneScroll.rowCount() : 0;
+        st.set(rCount, count);
+        java.util.List<com.spatialaudiosystem.redstone.RedstoneRule> rules = be().getRedstoneRules();
+        for (int r = 0; r < count; r++) {
+            int idx = r + redstoneScroll.offset();
+            com.spatialaudiosystem.redstone.RedstoneRule rule = idx >= 0 && idx < rules.size() ? rules.get(idx) : null;
+            st.set(rTrigger, r, rule == null ? "" : Component.translatable(
+                    "gui.spatialaudiosystem.rs_trigger_" + rule.trigger().name().toLowerCase(java.util.Locale.ROOT)).getString());
+            st.set(rStrength, r, rule == null ? "" : String.valueOf(rule.strength()));
+            st.set(rDelay, r, rule == null ? "" : seconds(rule.delayTicks()));
+            // A lamp has no length; the column shows a dash and is greyed (colorKey).
+            st.set(rLength, r, rule == null ? "" : rule.trigger().isPulse() ? seconds(rule.lengthTicks())
+                    : Component.translatable("gui.spatialaudiosystem.rs_na").getString());
+            st.set(rEntry, r, rule == null ? "" : entryScopeText(rule));
+            st.set(rLengthColor, r, rule != null && rule.trigger().isPulse() ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE);
+        }
+        // Editable either way; grey says it has no effect until the schedule plays.
+        st.set(rEntryColor, scheduleModeOn ? COLOR_RANGE_VALUE : COLOR_RANGE_INACTIVE);
+        st.set(rEnabledTrack, redstoneToggle.trackBg());
+        st.set(rEnabledKnob, redstoneToggle.knobBg());
+        st.setOffset(rEnabledKnobX, redstoneToggle.knobX(0));
+        st.setOffset(rThumbY, redstoneScroll.thumbY(0, RS_LIST_H - 2, THUMB_H));
+        st.set(rScrollbar, redstoneScroll.needsScrollbar());
+    }
+
+    private String titleText() {
+        if (nameInput.isFocused()) return nameInput.display();
+        String name = be().getDeviceName();
+        return name != null ? name
+                : Component.translatable("gui.spatialaudiosystem.playback_name_placeholder").getString();
+    }
+
+    private String fileText() {
+        PlaybackDeviceBlockEntity be = be();
+        if (scheduleModeOn) {
+            int tracks = 0;
+            for (int i = 0; i < be.getEntryCount(); i++) {
+                if (!be.getPlaylist().getStackInSlot(i).isEmpty()) tracks++;
+            }
+            return Component.translatable(
+                    "gui.spatialaudiosystem.tracks_scheduled", tracks).getString();
+        }
+        ItemStack media = be.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.MEDIA_SLOT);
+        String name = media.get(ModDataComponents.AUDIO_FILE_NAME);
+        if (name == null) {
+            return Component.translatable("gui.spatialaudiosystem.no_media").getString();
+        }
+        return trimToFit(Component.translatable(
+                "gui.spatialaudiosystem.file_prefix", name).getString(), FILE_MAX_W);
+    }
+
+    private String formatText() {
+        PlaybackDeviceBlockEntity be = be();
+        if (scheduleModeOn) {
+            int idx = be.getPlayingEntry();
+            String name = idx < 0 ? null
+                    : be.getPlaylist().getStackInSlot(idx).get(ModDataComponents.AUDIO_FILE_NAME);
+            if (name == null) return "";
+            return trimToFit(Component.translatable(
+                    "gui.spatialaudiosystem.now_playing", name).getString(), FILE_MAX_W);
+        }
+        ItemStack media = be.getInventory().getStackInSlot(PlaybackDeviceBlockEntity.MEDIA_SLOT);
+        if (!media.has(ModDataComponents.AUDIO_FILE_NAME)) return "";
+        String fmt = media.getOrDefault(ModDataComponents.AUDIO_FORMAT, "unknown");
+        return Component.translatable(
+                "gui.spatialaudiosystem.format_prefix", fmt.toUpperCase()).getString();
+    }
+
+    private String attenuationRangeText() {
+        PlaybackDeviceBlockEntity be = be();
+        if (rangeBoardInserted()) {
+            return Component.translatable("gui.spatialaudiosystem.range_board_active").getString();
+        }
+        int range = be.getAttenuationRange();
+        String text = Component.translatable(
+                "gui.spatialaudiosystem.attenuation_range", range).getString();
+        if (!be.isAttenuationMode()) {
+            // Editable, kept, but not what the sound uses until attenuation is on. A
+            // short suffix instead of the jukebox label: the row is 192 px wide and
+            // nothing clips it, so the first version's long suffix ran past the dialog.
+            text += Component.translatable("gui.spatialaudiosystem.range_unused").getString();
+        } else if (range == com.spatialaudiosystem.audio.SpatialGain.JUKEBOX_RANGE_BLOCKS) {
+            text += Component.translatable("gui.spatialaudiosystem.range_jukebox").getString();
+        }
+        return trimToFit(text, FILE_MAX_W);
+    }
+
+    private String mediaInfoText(int idx) {
+        String name = be().getPlaylist().getStackInSlot(idx).get(ModDataComponents.AUDIO_FILE_NAME);
+        if (name == null) return Component.translatable("gui.spatialaudiosystem.entry_empty").getString();
+        return trimToFit(name, 148);
     }
 
     @Override
@@ -527,16 +622,15 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             int delta = scrollY > 0 ? 1 : -1;   // R4.13.0.4
             int op;
             switch (key) {
-                case "pb-rs-trigger-wheel"  -> { be().cycleRedstoneTrigger(idx, delta);   op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_CYCLE_TRIGGER; }
-                case "pb-rs-strength-wheel" -> { be().adjustRedstoneStrength(idx, delta); op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADJUST_STRENGTH; }
-                case "pb-rs-delay-wheel"    -> { be().adjustRedstoneDelay(idx, delta);    op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADJUST_DELAY; }
-                case "pb-rs-length-wheel"   -> { be().adjustRedstoneLength(idx, delta);   op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADJUST_LENGTH; }
-                case "pb-rs-entry-wheel"    -> { be().adjustRedstoneEntry(idx, delta);    op = com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADJUST_ENTRY; }
+                case "pb-rs-trigger-wheel"  -> { be().cycleRedstoneTrigger(idx, delta);   op = PlaybackDeviceData.RULE_CYCLE_TRIGGER; }
+                case "pb-rs-strength-wheel" -> { be().adjustRedstoneStrength(idx, delta); op = PlaybackDeviceData.RULE_ADJUST_STRENGTH; }
+                case "pb-rs-delay-wheel"    -> { be().adjustRedstoneDelay(idx, delta);    op = PlaybackDeviceData.RULE_ADJUST_DELAY; }
+                case "pb-rs-length-wheel"   -> { be().adjustRedstoneLength(idx, delta);   op = PlaybackDeviceData.RULE_ADJUST_LENGTH; }
+                case "pb-rs-entry-wheel"    -> { be().adjustRedstoneEntry(idx, delta);    op = PlaybackDeviceData.RULE_ADJUST_ENTRY; }
                 default -> { return false; }
             }
             // Optimistic on the client entity above; the server clamps and its update tag confirms.
-            PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
-                    pos(), op, idx, delta));
+            send("redstone-rule", op, idx, delta);
             return true;
         }
         if ("pb-range-wheel".equals(key)) {
@@ -546,16 +640,14 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             int delta = scrollY > 0 ? 1 : -1;   // R4.13.0.4
             int next = PlaybackDeviceBlockEntity.clampRange(be().getAttenuationRange() + delta);
             be().setAttenuationRange(next);     // optimistic; the server clamps and confirms
-            PacketDistributor.sendToServer(
-                    new com.spatialaudiosystem.network.SetAttenuationRangePayload(pos(), next));
+            send("set-attenuation-range", next);
             return true;
         }
         if ("pb-count-wheel".equals(key)) {
             int idx = entryAtRow();
             if (idx < 0) return false;
             int delta = scrollY > 0 ? 1 : -1;
-            PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                    pos(), PlaylistCommandPayload.OP_ADJUST_PLAYCOUNT, idx, delta));
+            send("playlist", PlaybackDeviceData.PLAYLIST_ADJUST_PLAYCOUNT, idx, delta);
             be().setPlayCount(idx, be().getPlayCount(idx) + delta);   // optimistic; server confirms
             return true;
         }
@@ -579,10 +671,9 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                 case "pb-play-btn":
                     if (scheduleModeOn) {
                         // In schedule mode the main play button drives the schedule too.
-                        PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                                pos(), PlaylistCommandPayload.OP_PLAY_ALL, 0, 0));
+                        send("playlist", PlaybackDeviceData.PLAYLIST_PLAY_ALL, 0, 0);
                     } else {
-                        PacketDistributor.sendToServer(new PlaybackControlPayload(pos(), true));
+                        send("playback", true);
                     }
                     return;
                 case "pb-loop-btn":
@@ -590,18 +681,15 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     // current pass and stops the device; on makes a playing one-shot endless.
                     // The server owns both halves (see toggleNormalLoop).
                     normalLoopOn = !normalLoopOn;
-                    PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                            pos(), PlaylistCommandPayload.OP_TOGGLE_LOOP, 0, 0));
+                    send("playlist", PlaybackDeviceData.PLAYLIST_TOGGLE_LOOP, 0, 0);
                     return;
                 case "pb-stop-btn":
                 case "pb-sched-stop-btn":
                     // One stop for everything: halts the single medium or a running playlist sequence.
-                    PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                            pos(), PlaylistCommandPayload.OP_STOP, 0, 0));
+                    send("playlist", PlaybackDeviceData.PLAYLIST_STOP, 0, 0);
                     return;
                 case "pb-sched-playall-btn":
-                    PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                            pos(), PlaylistCommandPayload.OP_PLAY_ALL, 0, 0));
+                    send("playlist", PlaybackDeviceData.PLAYLIST_PLAY_ALL, 0, 0);
                     return;
                 case "pb-redstone-btn":
                     // The button is a canvas node (self-clickable in the engine), so this is
@@ -614,8 +702,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     return;
                 case "pb-rs-add-btn":
                     be().addRedstoneRule();   // optimistic; refused past sixteen on both sides
-                    PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
-                            pos(), com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_ADD, 0, 0));
+                    send("redstone-rule", PlaybackDeviceData.RULE_ADD, 0, 0);
                     return;
                 case "pb-rs-up-btn":
                     moveRule(-1);
@@ -627,8 +714,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     int idx = ruleIndexAtRow();
                     if (idx >= 0) {
                         be().removeRedstoneRule(idx);
-                        PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
-                                pos(), com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_REMOVE, idx, 0));
+                        send("redstone-rule", PlaybackDeviceData.RULE_REMOVE, idx, 0);
                     }
                     return;
                 }
@@ -641,38 +727,32 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     closeSchedule();
                     return;
                 case "pb-add-entry-btn":
-                    PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                            pos(), PlaylistCommandPayload.OP_ADD_ENTRY, 0, 0));
+                    send("playlist", PlaybackDeviceData.PLAYLIST_ADD_ENTRY, 0, 0);
                     return;
                 case "pb-entry-up-btn": {
                     int idx = entryAtRow();
-                    if (idx > 0) PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                            pos(), PlaylistCommandPayload.OP_REORDER, idx, idx - 1));
+                    if (idx > 0) send("playlist", PlaybackDeviceData.PLAYLIST_REORDER, idx, idx - 1);
                     return;
                 }
                 case "pb-entry-down-btn": {
                     int idx = entryAtRow();
                     if (idx >= 0 && idx + 1 < be().getEntryCount()) {
-                        PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                                pos(), PlaylistCommandPayload.OP_REORDER, idx, idx + 1));
+                        send("playlist", PlaybackDeviceData.PLAYLIST_REORDER, idx, idx + 1);
                     }
                     return;
                 }
                 case "pb-entry-stop-btn":
                     // The row's stop: the same stop as the header's, the device plays one thing.
-                    PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                            pos(), PlaylistCommandPayload.OP_STOP, 0, 0));
+                    send("playlist", PlaybackDeviceData.PLAYLIST_STOP, 0, 0);
                     return;
                 case "pb-entry-test-btn": {
                     int idx = entryAtRow();
-                    if (idx >= 0) PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                            pos(), PlaylistCommandPayload.OP_TEST, idx, 0));
+                    if (idx >= 0) send("playlist", PlaybackDeviceData.PLAYLIST_TEST, idx, 0);
                     return;
                 }
                 case "pb-entry-del-btn": {
                     int idx = entryAtRow();
-                    if (idx >= 0) PacketDistributor.sendToServer(new PlaylistCommandPayload(
-                            pos(), PlaylistCommandPayload.OP_REMOVE_ENTRY, idx, 0));
+                    if (idx >= 0) send("playlist", PlaybackDeviceData.PLAYLIST_REMOVE_ENTRY, idx, 0);
                     return;
                 }
                 default:
@@ -686,8 +766,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         int to = idx + delta;
         if (idx < 0 || to < 0 || to >= be().getRedstoneRules().size()) return;
         be().moveRedstoneRule(idx, delta);   // optimistic; the server does the same swap
-        PacketDistributor.sendToServer(new com.spatialaudiosystem.network.RedstoneRuleCommandPayload(
-                pos(), com.spatialaudiosystem.network.RedstoneRuleCommandPayload.OP_MOVE, idx, delta));
+        send("redstone-rule", PlaybackDeviceData.RULE_MOVE, idx, delta);
     }
 
     private void closeSchedule() {
@@ -717,6 +796,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         if (handyBehind != null) handyBehind.renderBehind(g, partialTick);
         followListSizes();
         if (schedulePopup.isOpen()) positionScheduleSlots(); else hideScheduleSlots();
+        pushAll();
         super.render(g, mouseX, mouseY, partialTick);
         if (schedulePopup.isOpen()) {
             renderScheduleOverlayItems(g, mouseX, mouseY);
@@ -979,11 +1059,7 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     }
 
     private void submitName() {
-        PlaybackDeviceBlockEntity be = be();
-        if (be.getLevel() != null) {
-            PacketDistributor.sendToServer(new com.spatialaudiosystem.network.SetDeviceNamePayload(
-                    net.minecraft.core.GlobalPos.of(be.getLevel().dimension(), be.getBlockPos()), nameInput.value()));
-        }
+        send("rename", nameInput.value());
         nameInput.blur();
     }
 
@@ -1012,5 +1088,33 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     /** 幅に収まるよう "…" で省略する。 実体は {@code HudText.ellipsize} (省略記号を 1 種類に保つ)。 */
     private String trimToFit(String text, int maxWidth) {
         return com.manta.api.hud.HudText.ellipsize(this.font, text, maxWidth);
+    }
+
+    // ================================================================= server sync
+
+    /**
+     * The device's host on manta:data (MANTA_7_CONCEPT C4, network.PlaybackDeviceData): opened on the first
+     * action, closed with the screen. The screen's values still come from the block entity's sync; only the
+     * input moved (the payloads' own sends, one action each, the params in the layout's declaration order).
+     */
+    private com.manta.api.data.Mirror data;
+
+    private void send(String action, Object... args) {
+        if (data == null) {
+            PlaybackDeviceBlockEntity be = be();
+            if (be.getLevel() == null) return;
+            data = com.manta.api.data.Mirror.open(PlaybackDeviceData.channel(be.getLevel(), be.getBlockPos()),
+                    PlaybackDeviceData.schema());
+        }
+        data.send(action, args);
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        if (data != null) {
+            data.close();
+            data = null;
+        }
     }
 }
