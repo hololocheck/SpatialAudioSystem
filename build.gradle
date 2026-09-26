@@ -167,6 +167,29 @@ tasks.named('jar') { finalizedBy 'mantaLinkGate' }
 // against the Manta it embeds -- the gate ran only behind assemble/build (review, 2026-09-02).
 tasks.named('check') { dependsOn 'mantaLinkGate' }
 
+// MANTA_7_CONCEPT X1: a wiki page in language L names the capture taken in L. The rule lives in manta's script; the
+// demand sits here, where the pages are.
+def mantaWikiLangGateScript = file('../manta/scripts/manta7_wiki_lang_gate.py')
+tasks.register('mantaWikiLangGate') {
+    group = 'verification'
+    description = "Every wiki page in language L names the capture taken in L"
+    doLast {
+        if (!mantaWikiLangGateScript.exists()) {
+            throw new GradleException("manta's manta7_wiki_lang_gate.py not found at ${mantaWikiLangGateScript} - this " +
+                    "gate needs the Manta checkout beside this one. Refusing rather than reporting a pass it did not measure.")
+        }
+        def proc = ['python', mantaWikiLangGateScript.absolutePath, projectDir.absolutePath].execute()
+        def out = new StringBuilder(), err = new StringBuilder()
+        proc.waitForProcessOutput(out, err)
+        print out.toString()
+        print err.toString()
+        if (proc.exitValue() != 0) {
+            throw new GradleException("mantaWikiLangGate: exit ${proc.exitValue()} - a wiki page names another language's capture, or the gate could not tell")
+        }
+    }
+}
+tasks.named('check') { dependsOn 'mantaWikiLangGate' }
+
 // Expand ${manta_version} in mods.toml from gradle.properties, keeping the required
 // range in lockstep with the embedded Manta. ${mod_version} comes from the build's own
 // version so the declared version cannot drift from the jar's filename — a hardcoded
