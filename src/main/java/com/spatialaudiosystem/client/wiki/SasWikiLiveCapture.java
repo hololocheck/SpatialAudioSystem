@@ -3,6 +3,7 @@ package com.spatialaudiosystem.client.wiki;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.spatialaudiosystem.screen.PlaybackDeviceScreenV2;
 import com.spatialaudiosystem.screen.RecordingDeviceScreenV2;
+import com.spatialaudiosystem.screen.SoundHandyScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import org.slf4j.Logger;
@@ -31,6 +32,30 @@ public final class SasWikiLiveCapture {
 
     private SasWikiLiveCapture() {}
 
+    /**
+     * One screen of this mod and the states it can be put in. {@code applyBeforeInit}: the state is applied before
+     * {@code init} rather than after it — the playback device's schedule overlay is laid out during init, and its slot
+     * positions come from the overlay origin init establishes. {@code photographed}: the wiki capture shoots it; a
+     * screen no page shows (the sound handy's page has no picture) is listed for the machine sweep alone.
+     *
+     * <p>BelugaAOS reads {@link #table()} by reflection and SHOWS these screens on a world of its own run for its UI
+     * sweep; the showing, and the containment it needs, live there and never here — the device factories build with
+     * a throwaway block entity, and a container screen's menu carries containerId 0.
+     */
+    record Entry(String id, Supplier<Screen> factory, BiConsumer<Screen, String> apply,
+                 boolean applyBeforeInit, boolean photographed, String... states) {}
+
+    /** The catalogue. Order is the capture order, which is also the order a driver walks. */
+    static List<Entry> table() {
+        return List.of(
+            new Entry("memory-device", RecordingDeviceScreenV2::wikiCreate, NO_STATE, true, true, "main"),
+            new Entry("playback-device", PlaybackDeviceScreenV2::wikiCreate,
+                    (s, st) -> ((PlaybackDeviceScreenV2) s).wikiApplyState(st), true, true, "main", "schedule"),
+            new Entry("sound-handy", SoundHandyScreen::wikiCreate,
+                    (s, st) -> ((SoundHandyScreen) s).wikiApplyState(st), false, false, "list", "settings")
+        );
+    }
+
     public static void clearCache() { done.clear(); }
 
     /** Photographs every documented view. Render-thread only; reschedules itself otherwise. */
@@ -55,12 +80,12 @@ public final class SasWikiLiveCapture {
                 } catch (Throwable t) {
                     LOGGER.warn("[SasWikiLive] language inject failed for {}: {}", lang, t.toString());
                 }
-                n += captureStates("memory-device", lang, savePng,
-                        RecordingDeviceScreenV2::wikiCreate, NO_STATE, "main");
-                n += captureStates("playback-device", lang, savePng,
-                        PlaybackDeviceScreenV2::wikiCreate,
-                        (s, st) -> ((PlaybackDeviceScreenV2) s).wikiApplyState(st),
-                        "main", "schedule");
+                for (Entry e : table()) {
+                    if (e.photographed()) {
+                        n += captureStates(e.id(), lang, savePng, e.factory(), e.apply(), e.applyBeforeInit(),
+                                e.states());
+                    }
+                }
             }
         } finally {
             net.minecraft.locale.Language.inject(original);
@@ -71,15 +96,16 @@ public final class SasWikiLiveCapture {
     }
 
     /**
-     * State is applied before {@code init} so an open overlay is laid out during init — its slot
-     * positions are derived from the overlay origin, which init is what establishes.
+     * With {@code applyBeforeInit} (both devices) the state is applied before {@code init} so an open overlay is laid
+     * out during init — its slot positions are derived from the overlay origin, which init is what establishes.
      */
     private static int captureStates(String id, String lang, boolean savePng,
                                      Supplier<? extends Screen> factory,
-                                     BiConsumer<Screen, String> apply, String... states) {
+                                     BiConsumer<Screen, String> apply, boolean applyBeforeInit,
+                                     String... states) {
         // The loop is the part (B11). apply runs BEFORE init here -- TSU does the opposite, and
         // which is right needs one real screenshot to settle, so both keep what they had.
-        return com.manta.api.wiki.WikiCaptureLoop.captureStates(done, id, lang, factory, apply, true,
+        return com.manta.api.wiki.WikiCaptureLoop.captureStates(done, id, lang, factory, apply, applyBeforeInit,
                 (screen, sid, st, lg) -> SasWikiCapture.captureScreen(screen, sid, st, lg, savePng),
                 LOGGER, states);
     }

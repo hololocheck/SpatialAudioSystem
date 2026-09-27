@@ -22,6 +22,7 @@ import com.spatialaudiosystem.handy.HandyActions;
 import com.spatialaudiosystem.handy.HandyDeviceRow;
 import com.spatialaudiosystem.handy.SoundDeviceRegistry;
 import com.spatialaudiosystem.item.ModDataComponents;
+import com.spatialaudiosystem.item.ModItems;
 import com.spatialaudiosystem.item.SoundHandyItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -153,6 +154,24 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         // Always the list: the mini HUD already names the target, and opening straight onto its
         // page read as "the handy jumps somewhere" (user's real-device note 2026-09-05).
         this.pages.setCurrent(Page.LIST);
+    }
+
+    /**
+     * A handy screen for BelugaAOS's UI sweep ({@code SasWikiLiveCapture}'s table). The item is not read here, so a
+     * fresh handy stands in for the one in the player's hand.
+     */
+    public static SoundHandyScreen wikiCreate() {
+        return new SoundHandyScreen(new ItemStack(ModItems.SOUND_HANDY.get()));
+    }
+
+    /**
+     * Puts the screen on a page by name for the sweep, without the page transition: "list" (where it opens) or
+     * "settings". The device page needs a selected device and is not offered.
+     */
+    public void wikiApplyState(String state) {
+        if ("settings".equals(state)) {
+            pages.setCurrent(Page.SETTINGS);
+        }
     }
 
     @Override
