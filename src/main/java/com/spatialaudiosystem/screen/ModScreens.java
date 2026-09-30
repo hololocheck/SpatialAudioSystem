@@ -26,6 +26,8 @@ public class ModScreens {
         event.enqueueWork(() -> {
             // Hover hints + F1 wiki jumps for every SAS screen element.
             SasScreenHints.registerAll();
+            // The wiki draws the pages' screen pictures live from the capture table (Manta 7 Phase 7).
+            com.spatialaudiosystem.client.wiki.SasWikiLiveCapture.registerLive();
 
             ItemProperties.register(ModItems.RECORDING_MEDIUM.get(),
                     ResourceLocation.fromNamespaceAndPath(SpatialAudioSystem.MOD_ID, "audio_format"),

@@ -56,6 +56,22 @@ public final class SasWikiLiveCapture {
         );
     }
 
+    /**
+     * The photographed screens, lent to Manta's wiki to draw each one live where a page shows its picture (Manta
+     * {@code WikiLiveScreens}, MANTA_7_PHASE7_PLAYBACK 3.1): the wiki builds and draws them inside its playback
+     * containment (no packet, no slot action on the player's own menu, no screen change). Once, at client setup.
+     */
+    public static void registerLive() {
+        List<com.manta.api.wiki.WikiLiveScreens.Row> rows = new java.util.ArrayList<>();
+        for (Entry e : table()) {
+            if (e.photographed()) {
+                rows.add(new com.manta.api.wiki.WikiLiveScreens.Row(e.id(), e.factory(), e.apply(),
+                        e.applyBeforeInit(), e.states()));
+            }
+        }
+        com.manta.api.wiki.WikiLiveScreens.register(com.spatialaudiosystem.SpatialAudioSystem.MOD_ID, rows);
+    }
+
     public static void clearCache() { done.clear(); }
 
     /** Photographs every documented view. Render-thread only; reschedules itself otherwise. */
