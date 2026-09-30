@@ -1,0 +1,11 @@
+{
+  "schema": "manta-playback/1",
+  "loop": true,
+  "restartHoldMs": 1500,
+  "steps": [
+    { "target": { "classes": ["rec-file-btn"] }, "do": "hover", "say": "sas.wiki.play.rec.file", "holdMs": 1600 },
+    { "target": { "classes": ["rec-play-btn"] }, "do": "hover", "say": "sas.wiki.play.rec.play", "holdMs": 1400 },
+    { "target": { "classes": ["rec-start-btn"] }, "do": "hover", "say": "sas.wiki.play.rec.start", "holdMs": 1500 },
+    { "target": { "classes": ["rec-clear-btn"] }, "do": "hover", "say": "sas.wiki.play.rec.clear", "holdMs": 1400 }
+  ]
+}

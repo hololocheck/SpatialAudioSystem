@@ -1,0 +1,11 @@
+{
+  "schema": "manta-playback/1",
+  "loop": true,
+  "restartHoldMs": 1500,
+  "steps": [
+    { "target": { "classes": ["pb-play-btn"] }, "do": "hover", "say": "sas.wiki.play.pb.play", "holdMs": 1400 },
+    { "target": { "classes": ["pb-stop-btn"] }, "do": "hover", "say": "sas.wiki.play.pb.stop", "holdMs": 1300 },
+    { "target": { "classes": ["pb-loop-btn"] }, "do": "hover", "say": "sas.wiki.play.pb.loop", "holdMs": 1400 },
+    { "target": { "classes": ["pb-atten-range"] }, "do": "hover", "say": "sas.wiki.play.pb.range", "holdMs": 1600 }
+  ]
+}

@@ -197,5 +197,13 @@
   "gui.spatialaudiosystem.sound_handy.drag_hud": "Drag: HUD",
   "gui.spatialaudiosystem.sound_handy.drag_panel": "Drag: panel",
   "sas.hint.hd_layout": "Drag the panel by its header and the mini HUD to place them; positions last for this session",
-  "sas.hint.hd_layout_reset": "Put the panel and the HUD back in their corners"
+  "sas.hint.hd_layout_reset": "Put the panel and the HUD back in their corners",
+  "sas.wiki.play.rec.file": "Pick a sound file from your PC",
+  "sas.wiki.play.rec.play": "Listen to the picked file",
+  "sas.wiki.play.rec.start": "Write the sound onto the medium",
+  "sas.wiki.play.rec.clear": "Drop the picked file",
+  "sas.wiki.play.pb.play": "Play the medium into the world",
+  "sas.wiki.play.pb.stop": "Stop the playback",
+  "sas.wiki.play.pb.loop": "Keep playing until stopped",
+  "sas.wiki.play.pb.range": "The range without a board"
 }

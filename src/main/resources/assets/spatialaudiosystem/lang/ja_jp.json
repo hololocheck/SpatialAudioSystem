@@ -197,5 +197,13 @@
   "gui.spatialaudiosystem.sound_handy.drag_hud": "ドラッグ: HUD",
   "gui.spatialaudiosystem.sound_handy.drag_panel": "ドラッグ: パネル",
   "sas.hint.hd_layout": "パネルはヘッダを、ミニ HUD は本体をドラッグで移動できます。位置はこのセッション中だけ保たれます",
-  "sas.hint.hd_layout_reset": "パネルと HUD を既定の角に戻します"
+  "sas.hint.hd_layout_reset": "パネルと HUD を既定の角に戻します",
+  "sas.wiki.play.rec.file": "PC から音声ファイルを選びます",
+  "sas.wiki.play.rec.play": "選んだファイルを試聴します",
+  "sas.wiki.play.rec.start": "記録媒体に音声を書き込みます",
+  "sas.wiki.play.rec.clear": "選んだファイルを取り消します",
+  "sas.wiki.play.pb.play": "記録媒体をワールドで鳴らします",
+  "sas.wiki.play.pb.stop": "再生を止めます",
+  "sas.wiki.play.pb.loop": "止めるまで繰り返し鳴らします",
+  "sas.wiki.play.pb.range": "ボード無しの時の再生範囲"
 }
