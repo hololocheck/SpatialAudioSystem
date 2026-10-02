@@ -9,6 +9,7 @@ import com.manta.api.screen.JsonLayoutEngine;
 import com.manta.api.screen.JsonLayoutPlainScreen;
 import com.manta.api.screen.JsonLayoutScreen;
 import com.manta.api.screen.PageLayer;
+import com.manta.api.screen.PanelTransform;
 import com.manta.api.state.BoolSlot;
 import com.manta.api.state.ColorSlot;
 import com.manta.api.state.MantaState;
@@ -220,10 +221,6 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         pushAll();
-        float offY = slideOffsetY();
-        float s = panelScale();
-        int pvx = px + PANEL_W;
-        int pvy = py + PANEL_H;   // bottom-right pivot keeps the panel flush in the corner
         // The device page enters and leaves through the panel's left edge: while it moves, the
         // nodes past that edge must not show outside the panel (user's real-device note
         // 2026-09-05). GuiGraphics' scissor is in GUI coordinates, not the pose's, so the
@@ -233,31 +230,47 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
             // Inside the frame's cyan border, not the panel's outer edge: the page must come
             // out of the navy area itself (user's real-device note 2026-09-05, round 5).
             int[] r = screenRect();
-            int dy = Math.round(offY);
-            int inset = Math.round(FRAME_BORDER_W * s);
+            int dy = Math.round(slideOffsetY());
+            int inset = Math.round(FRAME_BORDER_W * panelScale());
             g.enableScissor(r[0] + inset, r[1] + dy + inset, r[0] + r[2] - inset, r[1] + r[3] + dy - inset);
         }
-        g.pose().pushPose();
-        if (offY != 0f) g.pose().translate(0, offY, 0);
-        if (s != 1f) {
-            g.pose().translate(pvx, pvy, 0);
-            g.pose().scale(s, s, 1f);
-            g.pose().translate(-pvx, -pvy, 0);
-        }
-        super.render(g, (int) Math.round(sMx(mouseX)), (int) Math.round(sMy(mouseY)), partialTick);
+        super.render(g, mouseX, mouseY, partialTick);   // the base draws the panel under panelTransform()
         if (clip) {
             // The clip took the frame's own border with it (the engine paints the frame before
             // the nodes, so the border cannot be left out of the clip - real-device note
-            // 2026-09-05, round 6). Draw the border again, unclipped, under the same pose: the
-            // same stroke the frame uses (an inside band), so it lands on the same pixels.
+            // 2026-09-05, round 6). Draw the border again, unclipped.
             g.disableScissor();
-            com.manta.api.draw.SmoothRenderer.strokeRoundedRect(g, px, py, PANEL_W, PANEL_H,
-                    FRAME_RADIUS, FRAME_BORDER_W, FRAME_BORDER_ARGB);
+            redrawFrameBorder(g);
         }
-        g.pose().popPose();
         settleDevPage();
         if (closing && closeProgress() >= 1f) finishClose();
     }
+
+    /**
+     * The frame's border, under the panel's own transform: the same stroke the frame uses (an inside
+     * band), so it lands on the same pixels the base drew it on.
+     */
+    private void redrawFrameBorder(GuiGraphics g) {
+        g.pose().pushPose();
+        panelTransform().applyTo(g.pose());
+        com.manta.api.draw.SmoothRenderer.strokeRoundedRect(g, px, py, PANEL_W, PANEL_H,
+                FRAME_RADIUS, FRAME_BORDER_W, FRAME_BORDER_ARGB);
+        g.pose().popPose();
+    }
+
+    /**
+     * The open/close slide and the fit, about the bottom-right corner so the panel stays flush in it.
+     * The base draws the panel under it, maps the pointer back through it and reports the hit map
+     * through it; until 2026-09-30 this screen did the first two itself and the hit map knew neither.
+     * Behind a device screen the panel is drawn at rest ({@link #renderBehind}).
+     */
+    @Override
+    protected PanelTransform panelTransform() {
+        return new PanelTransform(px + PANEL_W, py + PANEL_H, panelScale(), 0f, drawnBehind ? 0f : slideOffsetY());
+    }
+
+    /** True while {@link #renderBehind} draws: the panel at rest, whatever its own slide says. */
+    private boolean drawnBehind;
 
     /**
      * The panel's on-screen rectangle {@code {x, y, w, h}} at rest: the dialog origin, scaled
@@ -274,17 +287,12 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
      */
     void renderBehind(GuiGraphics g, float partialTick) {
         pushAll();
-        float s = panelScale();
-        int pvx = px + PANEL_W;
-        int pvy = py + PANEL_H;
-        g.pose().pushPose();
-        if (s != 1f) {
-            g.pose().translate(pvx, pvy, 0);
-            g.pose().scale(s, s, 1f);
-            g.pose().translate(-pvx, -pvy, 0);
+        drawnBehind = true;
+        try {
+            super.render(g, -1, -1, partialTick);   // the base draws it under panelTransform(), at rest
+        } finally {
+            drawnBehind = false;
         }
-        super.render(g, -1, -1, partialTick);
-        g.pose().popPose();
     }
 
     /**
@@ -297,10 +305,6 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     private float panelScale() {
         return com.manta.api.screen.PanelFit.scale(this.width, this.height, PANEL_W, PANEL_H, 4);
     }
-
-    /** Screen mouse -> the panel's own coordinates (bottom-right pivot), where every hit-test lives. */
-    private double sMx(double mx) { float s = panelScale(); int p = px + PANEL_W; return p + (mx - p) / s; }
-    private double sMy(double my) { float s = panelScale(); int p = py + PANEL_H; return p + (my - p) / s; }
 
     private float slideOffsetY() {
         if (JsonLayoutScreen.WIKI_CAPTURE_MODE) return 0f;   // the capture wants the resting frame
@@ -337,13 +341,12 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        // The slide moves what is drawn but not the hit-test (sMy undoes the scale only), so a
-        // click during either slide would land on the wrong element: swallow it (review 2026-09-04).
+        // A click during either slide is swallowed (review 2026-09-04): the panel is moving under it.
         if (closing || slideOffsetY() != 0f) return true;
         // Same for the device page's own slide: a button in motion must not act (review 2026-09-05).
         if (devPageOffset() != 0f) return true;
         if (SoundHandyLayoutState.layoutAdjustMode() && button == 0 && beginDrag(mouseX, mouseY)) return true;
-        return super.mouseClicked(sMx(mouseX), sMy(mouseY), button);
+        return super.mouseClicked(mouseX, mouseY, button);   // the base maps the screen point itself
     }
 
     /** Grabs the mini HUD or the panel header, in raw screen coordinates. */
@@ -419,7 +422,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
             dragging = DRAG_NONE;
             return true;
         }
-        return super.mouseReleased(sMx(mouseX), sMy(mouseY), button);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
@@ -444,13 +447,13 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
                     clampOffset(oy, this.height - PANEL_H - BOTTOM_MARGIN, PANEL_H, this.height));
             return true;
         }
-        return super.mouseDragged(sMx(mouseX), sMy(mouseY), button, dragX, dragY);
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (closing) return true;
-        return super.mouseScrolled(sMx(mouseX), sMy(mouseY), scrollX, scrollY);
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     /** The playback device's own item icon at the head of each visible row (the layout has no item node). */
