@@ -91,6 +91,19 @@ class AudioOffersTest {
     }
 
     @Test
+    @DisplayName("SAS-NET-009: an unanswered offer lives the full minute")
+    void anUnansweredOfferLivesTheFullMinute() {
+        // The positive side of the expiry: only a HAVE shortens an offer. Without this case every
+        // offer could be given the have's short grace and all the others would stay green - while
+        // a client whose answer is slower than the grace never got the sound (second reading,
+        // 2026-10-02).
+        AudioOffers.record(ALICE, POS, ID, AUDIO, NOW);
+        assertThat(answer(ALICE, ID, false, NOW + AudioOffers.OFFER_TTL_MILLIS))
+                .isEqualTo(AudioOffers.Outcome.SENT);
+        assertThat(sent).hasSize(1);
+    }
+
+    @Test
     @DisplayName("SAS-NET-009: an offer nobody answered in time is gone")
     void anExpiredOfferSendsNothing() {
         AudioOffers.record(ALICE, POS, ID, AUDIO, NOW);
