@@ -4,6 +4,7 @@ import com.spatialaudiosystem.SpatialAudioSystem;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.registration.HandlerThread;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 @EventBusSubscriber(modid = SpatialAudioSystem.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
@@ -20,7 +21,9 @@ public class ModNetworking {
         // 1.6 the sound handy: handy_action / set_device_name (C2S) and handy_device_list (S2C).
         // 1.7 the screens', the handy's and the range board's own payloads moved to manta:data (MANTA_7_CONCEPT C4):
         //     sixteen fewer here, and a client on the 1.6 shape is refused at login.
-        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.7");
+        // 1.8 client_play_audio carries the audio's content hash, and the client answers audio_cache_answer before any
+        //     audio is sent - only a client without the bytes gets them (notes/CLIENT_AUDIO_CACHE.md).
+        final PayloadRegistrar registrar = event.registrar(SpatialAudioSystem.MOD_ID).versioned("1.8");
 
         registrar.playToServer(
                 AudioUploadStartPayload.TYPE,
@@ -46,10 +49,18 @@ public class ModNetworking {
                 PlaybackFinishedPayload::handle
         );
 
-        registrar.playToClient(
+        // ON THE NETWORK THREAD: the cache answer must not wait behind a joining player's main thread, which is seconds
+        // behind the network while terrain loads (CLIENT_AUDIO_CACHE.md §2). The handler queues its own main-thread work.
+        registrar.executesOn(HandlerThread.NETWORK).playToClient(
                 ClientPlayAudioPayload.TYPE,
                 ClientPlayAudioPayload.STREAM_CODEC,
                 ClientPlayAudioPayload::handle
+        );
+
+        registrar.playToServer(
+                AudioCacheAnswerPayload.TYPE,
+                AudioCacheAnswerPayload.STREAM_CODEC,
+                AudioCacheAnswerPayload::handle
         );
 
         registrar.playToClient(

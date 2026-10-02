@@ -7,6 +7,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.BitSet;
@@ -19,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIndex, int chunkCount, byte[] data)
         implements CustomPacketPayload {
 
-    private static final int CHUNK_SIZE = 500 * 1024; // 500 KB per chunk
+    static final int CHUNK_SIZE = 500 * 1024; // 500 KB per chunk
 
     public static final Type<ClientAudioChunkPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(SpatialAudioSystem.MOD_ID, "client_audio_chunk"));
@@ -64,7 +65,7 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
                                        BlockPos rangePos1, BlockPos rangePos2,
                                        boolean attenuationMode, int[] attenuationRanges,
                                        boolean loop, int startOffsetMillis, boolean synchronised,
-                                       long receivedAtMillis) {
+                                       long receivedAtMillis, byte[] contentHash) {
         long now = System.currentTimeMillis();
         // Measured from when each session's handler ran, not from its packet's stamp: the
         // stamp is earlier by the main thread's stall, and a window that counted from it
@@ -74,7 +75,7 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
 
         activeSessions.put(pos, new DownloadSession(
                 playbackId, totalSize, format, rangePos1, rangePos2, attenuationMode,
-                attenuationRanges, loop, startOffsetMillis, synchronised, receivedAtMillis));
+                attenuationRanges, loop, startOffsetMillis, synchronised, receivedAtMillis, contentHash));
     }
 
     /**
@@ -127,7 +128,7 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
                  BlockPos rangePos1, BlockPos rangePos2,
                  boolean attenuationMode, int[] attenuationRanges,
                  boolean loop, int startOffsetMillis,
-                 boolean synchronised, long announcedAtMillis) {}
+                 boolean synchronised, long announcedAtMillis, byte[] contentHash) {}
 
     /** The completed download at {@code pos}, or null while it is still arriving. */
     static Ready readyFor(BlockPos pos) {
@@ -135,7 +136,25 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
         if (s == null || !s.isComplete()) return null;
         return new Ready(s.playbackId, s.buffer, s.format, s.rangePos1, s.rangePos2,
                 s.attenuationMode, s.attenuationRanges, s.loop, s.startOffsetMillis,
-                s.synchronised, s.createdAt);
+                s.synchronised, s.createdAt, s.contentHash);
+    }
+
+    /**
+     * Fills the whole transfer at {@code pos} with bytes this client already keeps
+     * (notes/CLIENT_AUDIO_CACHE.md §2): the cache is one more source of the same chunks, so a kept
+     * sound starts through the same session -- offset, stamp, endless flag and all -- as one that
+     * arrived. False, and nothing written, for a replaced sound or bytes of another length.
+     */
+    static boolean fill(BlockPos pos, long playbackId, byte[] audio) {
+        DownloadSession session = activeSessions.get(pos);
+        if (session == null || session.playbackId != playbackId) return false;
+        return session.fillWhole(audio);
+    }
+
+    /** Plays a kept sound once its waiting session is filled; on the main thread. */
+    public static void completeFromCache(BlockPos pos, long playbackId, byte[] audio, Level level) {
+        if (!fill(pos, playbackId, audio)) return;
+        play(pos, level, false);
     }
 
     public static void handle(ClientAudioChunkPayload payload, IPayloadContext context) {
@@ -156,15 +175,25 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
                 return;
             }
 
-            Ready ready = readyFor(payload.pos);
-            if (ready == null) return;
-            activeSessions.remove(payload.pos);
-            AudioManager.getInstance().playAudio(
-                    context.player().level(), payload.pos, ready.playbackId(), ready.audio(), ready.format(),
-                    ready.rangePos1(), ready.rangePos2(),
-                    ready.attenuationMode(), ready.attenuationRanges(), ready.loop(),
-                    ready.startOffsetMillis(), ready.synchronised(), ready.announcedAtMillis());
+            play(payload.pos, context.player().level(), true);
         });
+    }
+
+    /**
+     * Hands a completed session to the player. {@code keep} is true for bytes that arrived by
+     * transfer: those are kept for the next announcement of the same sound, off the main thread
+     * and only if they hash to the name they were announced under.
+     */
+    private static void play(BlockPos pos, Level level, boolean keep) {
+        Ready ready = readyFor(pos);
+        if (ready == null) return;
+        activeSessions.remove(pos);
+        if (keep) com.spatialaudiosystem.client.ClientAudioCacheHook.keep(ready.contentHash(), ready.audio());
+        AudioManager.getInstance().playAudio(
+                level, pos, ready.playbackId(), ready.audio(), ready.format(),
+                ready.rangePos1(), ready.rangePos2(),
+                ready.attenuationMode(), ready.attenuationRanges(), ready.loop(),
+                ready.startOffsetMillis(), ready.synchronised(), ready.announcedAtMillis());
     }
 
     /** Send audio data to a player in chunks. */
@@ -215,10 +244,13 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
         /** Which indices have arrived. Counting receipts instead would let a repeated
          *  chunk hand a half-zero buffer to the decoder. */
         final BitSet received;
+        /** What the server announced these bytes as; the name they are kept under. */
+        final byte[] contentHash;
 
         DownloadSession(long playbackId, int totalSize, String format, BlockPos rangePos1, BlockPos rangePos2,
                         boolean attenuationMode, int[] attenuationRanges, boolean loop,
-                        int startOffsetMillis, boolean synchronised, long receivedAtMillis) {
+                        int startOffsetMillis, boolean synchronised, long receivedAtMillis,
+                        byte[] contentHash) {
             this.playbackId = playbackId;
             this.buffer = new byte[totalSize];
             this.format = format;
@@ -235,6 +267,15 @@ public record ClientAudioChunkPayload(BlockPos pos, long playbackId, int chunkIn
             this.createdAt = receivedAtMillis > 0 ? receivedAtMillis : System.currentTimeMillis();
             this.handledAt = System.currentTimeMillis();
             this.received = new BitSet(chunkCountFor(totalSize));
+            this.contentHash = contentHash;
+        }
+
+        /** Every chunk at once, from bytes kept on this client. Refused if any chunk has already arrived. */
+        boolean fillWhole(byte[] data) {
+            if (data.length != buffer.length || !received.isEmpty()) return false;
+            System.arraycopy(data, 0, buffer, 0, data.length);
+            received.set(0, chunkCountFor(buffer.length));
+            return true;
         }
 
         private int expectedLength(int index) {

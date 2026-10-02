@@ -89,6 +89,7 @@ class PlaybackDeliverySweepTest {
         packets.close();
         storage.close();
         PlaybackSessionRegistry.clear();
+        AudioOffers.clearForTest();
     }
 
     private static ServerPlayer playerAt(String name, double x) {
@@ -171,7 +172,11 @@ class PlaybackDeliverySweepTest {
                     .as("a one-shot here reports completion and ends the sound for everyone")
                     .isTrue();
         });
-        assertThat(chunkPayloads()).as("the audio itself must follow the metadata").isNotEmpty();
+        // The audio follows the player's answer that it does not keep it (CLIENT_AUDIO_CACHE.md):
+        // none before the answer, all of it after.
+        assertThat(chunkPayloads()).as("no audio before the player has answered").isEmpty();
+        AudioOffers.answer(near, DEVICE, playPayloads().get(0).playbackId(), false);
+        assertThat(chunkPayloads()).as("the audio itself must follow a player's need").isNotEmpty();
         assertThat(PlaybackSessionRegistry.pendingFor(OVERWORLD, near.getUUID()))
                 .as("a listener who was just sent it must not be sent it again next sweep")
                 .isEmpty();
@@ -317,7 +322,10 @@ class PlaybackDeliverySweepTest {
         // The metadata only opens a download session; without the chunks it never completes
         // and AudioManager is never reached. Asserted here because every other assertion in
         // this class reads play payloads, so a sendChunked that did nothing would be invisible.
-        assertThat(chunkPayloads()).as("the audio itself must follow the metadata").isNotEmpty();
+        // Since CLIENT_AUDIO_CACHE.md the chunks follow the player's need, and only that.
+        assertThat(chunkPayloads()).as("no audio before the player has answered").isEmpty();
+        AudioOffers.answer(near, DEVICE, id, false);
+        assertThat(chunkPayloads()).as("the audio itself must follow a player's need").isNotEmpty();
     }
 
     @Test

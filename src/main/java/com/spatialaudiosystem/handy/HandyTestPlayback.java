@@ -1,10 +1,11 @@
 package com.spatialaudiosystem.handy;
 
+import com.spatialaudiosystem.audio.AudioHashes;
+import com.spatialaudiosystem.audio.AudioOffers;
 import com.spatialaudiosystem.audio.AudioStorage;
 import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.blockentity.PlaybackDeviceBlockEntity;
 import com.spatialaudiosystem.item.ModDataComponents;
-import com.spatialaudiosystem.network.ClientAudioChunkPayload;
 import com.spatialaudiosystem.network.ClientPlayAudioPayload;
 import com.spatialaudiosystem.network.ClientStopAudioPayload;
 import net.minecraft.core.BlockPos;
@@ -52,10 +53,9 @@ public final class HandyTestPlayback {
         long playbackId = PlaybackSessionRegistry.begin(level, pos);
         SESSIONS.put(player.getUUID(), new Session(level.dimension(), pos, playbackId));
         // One-shot, unsynchronised and from the top, like the recording screen's preview.
-        PacketDistributor.sendToPlayer(player, new ClientPlayAudioPayload(
+        AudioOffers.offer(player, new ClientPlayAudioPayload(
                 pos, playbackId, audio.length, format, null, null, false, NO_ATTENUATION,
-                false, 0, false, 0L));
-        ClientAudioChunkPayload.sendChunked(player, pos, playbackId, audio);
+                false, 0, false, AudioHashes.of(medium, audio), 0L), audio);
         return true;
     }
 

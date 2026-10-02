@@ -27,6 +27,8 @@ class ClientDownloadHandoffTest {
     private static final long PLAYBACK_ID = 0xb8e540dccfc8e85eL;
     /** As sent by the server to a player who joined six seconds in. */
     private static final int OFFSET_MS = 6_050;
+    /** A content hash: what the announcement names the bytes as (CLIENT_AUDIO_CACHE.md). */
+    private static final byte[] HASH = new byte[32];
 
     @BeforeEach
     void clear() {
@@ -38,7 +40,7 @@ class ClientDownloadHandoffTest {
         ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, totalSize, "wav",
                 new BlockPos(1, 2, 3), new BlockPos(4, 5, 6),
                 true, new int[]{8, 8, 8, 8, 8, 8}, loop, offsetMillis, true,
-                System.currentTimeMillis());
+                System.currentTimeMillis(), HASH);
     }
 
     private static byte[] audio(int size) {
@@ -78,9 +80,14 @@ class ClientDownloadHandoffTest {
     @Test
     @DisplayName("SAS-NET-006: a transfer still arriving hands over nothing")
     void anIncompleteTransferIsNotReady() {
-        byte[] half = audio(64);
-        announce(half.length * 2, false, OFFSET_MS);
-        ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 2, half);
+        // A REAL partial transfer: the first of two chunks, at the size the transfer expects. Until
+        // 2026-10-02 this announced 128 bytes and delivered 64, which is one chunk of the wrong length
+        // - refused - so the session never held anything and this tested "no chunk", not "half".
+        byte[] first = audio(ClientAudioChunkPayload.CHUNK_SIZE);
+        announce(ClientAudioChunkPayload.CHUNK_SIZE + 64, false, OFFSET_MS);
+        assertThat(ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 2, first))
+                .as("the first chunk is taken")
+                .isTrue();
 
         // Playing a half-downloaded file is a decode error at best; the guard that prevents it
         // is the same one that decides whether the offset has arrived at all.
@@ -125,7 +132,7 @@ class ClientDownloadHandoffTest {
             byte[] data = audio(64);
             ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, data.length, "wav",
                     null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, sync,
-                    System.currentTimeMillis());
+                    System.currentTimeMillis(), HASH);
             ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 1, data);
             // False here turns the correction off entirely, which is the preview's behaviour
             // applied to a world sound -- and is indistinguishable from the bug it fixed.
@@ -135,7 +142,7 @@ class ClientDownloadHandoffTest {
 
     private static ClientPlayAudioPayload playPayload(long receivedAtMillis) {
         return new ClientPlayAudioPayload(POS, PLAYBACK_ID, 64, "wav", null, null,
-                true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, receivedAtMillis);
+                true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, HASH, receivedAtMillis);
     }
 
     private static byte[] wireBytes(ClientPlayAudioPayload payload) {
@@ -155,7 +162,7 @@ class ClientDownloadHandoffTest {
         byte[] data = audio(64);
         long stamp = 1_700_000_000_000L;
         ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, data.length, "wav",
-                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, stamp);
+                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, stamp, HASH);
         ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 1, data);
         assertThat(ClientAudioChunkPayload.readyFor(POS).announcedAtMillis()).isEqualTo(stamp);
     }
@@ -166,7 +173,7 @@ class ClientDownloadHandoffTest {
         byte[] data = audio(64);
         long before = System.currentTimeMillis();
         ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, data.length, "wav",
-                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, 0L);
+                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, 0L, HASH);
         ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 1, data);
         // Taken at face value, a zero stamp sizes a discard of fifty-odd years.
         assertThat(ClientAudioChunkPayload.readyFor(POS).announcedAtMillis())
@@ -183,10 +190,10 @@ class ClientDownloadHandoffTest {
         byte[] data = audio(64);
         long stalledStamp = System.currentTimeMillis() - 40_000;
         ClientAudioChunkPayload.prepareSession(POS, PLAYBACK_ID, data.length, "wav",
-                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, stalledStamp);
+                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, OFFSET_MS, true, stalledStamp, HASH);
         // Another sound's announcement runs the eviction sweep.
         ClientAudioChunkPayload.prepareSession(new BlockPos(9, 9, 9), PLAYBACK_ID + 7, 16, "wav",
-                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, 0, true, System.currentTimeMillis());
+                null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, 0, true, System.currentTimeMillis(), HASH);
         assertThat(ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 1, data))
                 .as("the transfer announced during the stall is still accepting chunks")
                 .isTrue();
@@ -317,5 +324,123 @@ class ClientDownloadHandoffTest {
         assertThat(ClientAudioChunkPayload.readyFor(POS).loop())
                 .as("the transfer hands over the flag as it is now, not as it was announced")
                 .isFalse();
+    }
+
+    // ===== the client cache (notes/CLIENT_AUDIO_CACHE.md) =====
+
+    private static byte[] hashOf(int seed) {
+        byte[] hash = new byte[32];
+        for (int i = 0; i < hash.length; i++) hash[i] = (byte) (seed * 7 + i);
+        return hash;
+    }
+
+    @Test
+    @DisplayName("SAS-NET-008: the content hash survives the wire, and nothing is left unread")
+    void theContentHashRoundTrips() {
+        byte[] hash = hashOf(3);
+        ClientPlayAudioPayload sent = new ClientPlayAudioPayload(POS, PLAYBACK_ID, 64, "wav", null, null,
+                true, new int[]{8, 8, 8, 8, 8, 8}, true, OFFSET_MS, true, hash, 0L);
+        net.minecraft.network.FriendlyByteBuf wire =
+                new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        ClientPlayAudioPayload.STREAM_CODEC.encode(wire, sent);
+        ClientPlayAudioPayload back = ClientPlayAudioPayload.STREAM_CODEC.decode(wire);
+        // The name the client keeps the bytes under: one wrong byte and every lookup misses (or,
+        // worse, finds another sound's file).
+        assertThat(back.contentHash()).isEqualTo(hash);
+        assertThat(back.synchronised()).isTrue();
+        assertThat(wire.readableBytes()).as("the reader consumed exactly what the writer produced").isZero();
+    }
+
+    @Test
+    @DisplayName("SAS-NET-008: an announcement without a 32-byte hash cannot be built")
+    void anAnnouncementNeedsAFullHash() {
+        for (byte[] bad : new byte[][]{null, new byte[0], new byte[31], new byte[33]}) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ClientPlayAudioPayload(POS, PLAYBACK_ID, 64,
+                            "wav", null, null, true, new int[]{8, 8, 8, 8, 8, 8}, false, 0, true, bad, 0L))
+                    .as("hash of %s", bad == null ? "none" : bad.length + " bytes")
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("SAS-NET-008: kept bytes fill the waiting transfer, which hands over everything a transfer would")
+    void keptBytesFillTheWaitingTransfer() {
+        byte[] kept = audio(1_600_000);   // three full 500 KB chunks and part of a fourth
+        announce(kept.length, true, OFFSET_MS);
+        ClientAudioChunkPayload.backdateForTest(POS, 9_000);
+
+        assertThat(ClientAudioChunkPayload.fill(POS, PLAYBACK_ID, kept)).isTrue();
+        ClientAudioChunkPayload.Ready ready = ClientAudioChunkPayload.readyFor(POS);
+        assertThat(ready).as("a filled transfer is complete").isNotNull();
+        assertThat(ready.audio()).isEqualTo(kept);
+        // The same session as a transfer: a late listener playing from the cache still starts where
+        // the sound has got to, from when the announcement arrived.
+        assertThat(ready.startOffsetMillis()).isEqualTo(OFFSET_MS);
+        assertThat(ready.loop()).isTrue();
+        assertThat(System.currentTimeMillis() - ready.announcedAtMillis()).isBetween(9_000L, 14_000L);
+        assertThat(ready.contentHash()).isEqualTo(HASH);
+    }
+
+    @Test
+    @DisplayName("SAS-NET-008: kept bytes for a replaced sound, or of another length, fill nothing")
+    void keptBytesThatDoNotFitFillNothing() {
+        byte[] kept = audio(256);
+        announce(kept.length, false, 0);
+        assertThat(ClientAudioChunkPayload.fill(POS, PLAYBACK_ID + 1, kept)).as("another sound's id").isFalse();
+        assertThat(ClientAudioChunkPayload.fill(POS, PLAYBACK_ID, audio(255))).as("one byte short").isFalse();
+        assertThat(ClientAudioChunkPayload.fill(new BlockPos(1, 1, 1), PLAYBACK_ID, kept)).as("no session").isFalse();
+        assertThat(ClientAudioChunkPayload.readyFor(POS)).isNull();
+    }
+
+    @Test
+    @DisplayName("SAS-NET-008: kept bytes do not overwrite a transfer that has already begun")
+    void keptBytesDoNotOverwriteATransfer() {
+        // The first of two chunks has really landed (it is the length the transfer expects - a
+        // shorter one is refused, and then no transfer has begun at all).
+        int total = ClientAudioChunkPayload.CHUNK_SIZE + 64;
+        announce(total, false, 0);
+        assertThat(ClientAudioChunkPayload.deliverForTest(POS, PLAYBACK_ID, 0, 2,
+                audio(ClientAudioChunkPayload.CHUNK_SIZE))).as("the first chunk is taken").isTrue();
+        assertThat(ClientAudioChunkPayload.fill(POS, PLAYBACK_ID, audio(total))).isFalse();
+        assertThat(ClientAudioChunkPayload.readyFor(POS)).isNull();
+    }
+
+    @Test
+    @DisplayName("SAS-NET-008: the play handler queues the session, answers on its own thread, then reads the cache")
+    void thePlayHandlerQueuesThenAnswersThenReads() throws Exception {
+        // handle needs a live context, so its order is read rather than run. The order is the
+        // feature: the answer is a statement of the handler itself, not of the queued work -- queued,
+        // a joining player would wait out its main thread's stall before the server sent a byte --
+        // and the session is queued before anything that could fill it: the chunks a "need" brings
+        // back and the kept bytes a "have" reads.
+        String text = sourceText("src/main/java/com/spatialaudiosystem/network/ClientPlayAudioPayload.java");
+        int handle = text.indexOf("public static void handle(");
+        String body = text.substring(handle, text.indexOf("@Override", handle)).replace("\r\n", "\n");
+        int queue = body.indexOf("context.enqueueWork(");
+        int reply = body.indexOf("\n        context.reply(new AudioCacheAnswerPayload(");
+        int read = body.indexOf("ClientAudioCacheHook.fill(");
+        assertThat(queue).isPositive();
+        assertThat(reply).as("the answer, at the handler's own level").isGreaterThan(queue);
+        assertThat(read).isGreaterThan(reply);
+        assertThat(body).contains("payload.contentHash));");
+    }
+
+    @Test
+    @DisplayName("SAS-NET-008: the play payload is handled on the network thread, under protocol 1.8")
+    void thePlayPayloadIsHandledOnTheNetworkThread() throws Exception {
+        String text = sourceText("src/main/java/com/spatialaudiosystem/network/ModNetworking.java");
+        String compact = text.replaceAll("\\s+", "");
+        assertThat(compact).contains("registrar.executesOn(HandlerThread.NETWORK).playToClient(ClientPlayAudioPayload.TYPE,");
+        assertThat(compact).contains("playToServer(AudioCacheAnswerPayload.TYPE,");
+        assertThat(compact).contains(".versioned(\"1.8\")");
+    }
+
+    @Test
+    @DisplayName("SAS-NET-008: a transfer keeps what it received; a cache fill does not write it again")
+    void onlyATransferKeepsItsBytes() throws Exception {
+        String text = sourceText("src/main/java/com/spatialaudiosystem/network/ClientAudioChunkPayload.java");
+        assertThat(text).contains("play(payload.pos, context.player().level(), true);");
+        assertThat(text).contains("play(pos, level, false);");
+        assertThat(text).contains("if (keep) com.spatialaudiosystem.client.ClientAudioCacheHook.keep(ready.contentHash(), ready.audio());");
     }
 }

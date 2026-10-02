@@ -1,6 +1,7 @@
 package com.spatialaudiosystem.network;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
+import com.spatialaudiosystem.audio.AudioHashes;
 import com.spatialaudiosystem.audio.AudioStorage;
 import io.netty.handler.codec.DecoderException;
 import net.minecraft.core.BlockPos;
@@ -12,7 +13,8 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * Server → Client: metadata-only playback start signal.
- * Audio data follows via {@link ClientAudioChunkPayload} chunks.
+ * The client answers with {@link AudioCacheAnswerPayload}; the audio follows via
+ * {@link ClientAudioChunkPayload} chunks only when it answers that it does not keep it.
  */
 public record ClientPlayAudioPayload(
         BlockPos pos,
@@ -45,14 +47,21 @@ public record ClientPlayAudioPayload(
          */
         boolean synchronised,
         /**
+         * SHA-256 of the audio that follows (notes/CLIENT_AUDIO_CACHE.md). A client that already
+         * keeps these bytes answers so and plays them without a transfer; the server sends the
+         * audio only to a client that answers that it needs it.
+         */
+        byte[] contentHash,
+        /**
          * When this packet was decoded, by this client's clock. Not on the wire.
          *
-         * <p>Stamped in {@link #read}, on the network thread, and not in {@link #handle}: the
-         * handler runs on the main thread, and for a player who has just joined that thread
-         * stalls for seconds while terrain loads. Measured on a live server on 2026-09-02: the
-         * handler ran 6.7 s after the packet had arrived, so the transfer correction began
-         * counting 6.7 s late and the listener started that far behind everyone else -- the
-         * "about seven seconds" the test reported.
+         * <p>Stamped in {@link #read}, on the network thread, as the packet is decoded. The session
+         * that counts from it is prepared on the main thread, which for a player who has just joined
+         * stalls for seconds while terrain loads. Measured on a live server on 2026-09-02, when the
+         * handler itself still ran on the main thread: it ran 6.7 s after the packet had arrived, so
+         * the transfer correction began counting 6.7 s late and the listener started that far behind
+         * everyone else -- the "about seven seconds" the test reported. Since CLIENT_AUDIO_CACHE.md
+         * the handler runs on the network thread; the stamp stays in read, the earliest point.
          */
         long receivedAtMillis) implements CustomPacketPayload {
 
@@ -70,6 +79,14 @@ public record ClientPlayAudioPayload(
      * driving that loop comes from this mod rather than from a peer.
      */
     public static final int MAX_START_OFFSET_MILLIS = 7 * 24 * 60 * 60 * 1000;
+
+    /** Refused at construction, so no call site can announce a sound under no name or a short one. */
+    public ClientPlayAudioPayload {
+        if (contentHash == null || contentHash.length != AudioHashes.LENGTH) {
+            throw new IllegalArgumentException("the content hash is " + AudioHashes.LENGTH + " bytes, got "
+                    + (contentHash == null ? "none" : contentHash.length));
+        }
+    }
 
     public static final CustomPacketPayload.Type<ClientPlayAudioPayload> TYPE =
             new CustomPacketPayload.Type<>(
@@ -94,6 +111,7 @@ public record ClientPlayAudioPayload(
         buf.writeBoolean(p.loop);
         buf.writeVarInt(p.startOffsetMillis);
         buf.writeBoolean(p.synchronised);
+        buf.writeBytes(p.contentHash);
     }
 
     private static ClientPlayAudioPayload read(FriendlyByteBuf buf) {
@@ -122,20 +140,36 @@ public record ClientPlayAudioPayload(
             throw new DecoderException("Invalid start offset: " + startOffsetMillis);
         }
         boolean synchronised = buf.readBoolean();
+        byte[] contentHash = new byte[AudioHashes.LENGTH];
+        buf.readBytes(contentHash);
         // The arrival stamp. This runs on the network thread, which keeps reading while the
         // main thread is busy; everything after it does not.
         return new ClientPlayAudioPayload(pos, playbackId, totalSize, format, rangePos1, rangePos2,
-                attenuationMode, attenuationRanges, loop, startOffsetMillis, synchronised,
+                attenuationMode, attenuationRanges, loop, startOffsetMillis, synchronised, contentHash,
                 System.currentTimeMillis());
     }
 
+    /**
+     * ON THE NETWORK THREAD -- {@link ModNetworking} registers this payload so. The answer goes back
+     * before anything waits on the main thread, which for a player who has just joined is seconds
+     * behind (measured 6.7 s on 2026-09-02): answered from there, a player without the sound would
+     * hear nothing for that stall and then for the whole transfer.
+     */
     public static void handle(ClientPlayAudioPayload payload, IPayloadContext context) {
+        boolean have = com.spatialaudiosystem.client.ClientAudioCacheHook.has(payload.contentHash, payload.totalSize);
+        // Queued before anything can answer it: the chunks a "need" brings back, and the kept bytes
+        // a "have" reads, both reach the main thread through this same queue, so neither can
+        // arrive before the session they fill.
         context.enqueueWork(() ->
                 ClientAudioChunkPayload.prepareSession(payload.pos, payload.playbackId,
                         payload.totalSize, payload.format,
                         payload.rangePos1, payload.rangePos2,
                         payload.attenuationMode, payload.attenuationRanges, payload.loop,
-                        payload.startOffsetMillis, payload.synchronised, payload.receivedAtMillis));
+                        payload.startOffsetMillis, payload.synchronised, payload.receivedAtMillis,
+                        payload.contentHash));
+        context.reply(new AudioCacheAnswerPayload(payload.pos, payload.playbackId, have));
+        if (have) com.spatialaudiosystem.client.ClientAudioCacheHook.fill(payload.pos, payload.playbackId,
+                payload.contentHash);
     }
 
     @Override

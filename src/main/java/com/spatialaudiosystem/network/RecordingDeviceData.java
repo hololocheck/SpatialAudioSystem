@@ -4,6 +4,8 @@ import com.manta.api.data.Host;
 import com.manta.api.data.MantaData;
 import com.manta.api.data.Schema;
 import com.spatialaudiosystem.SpatialAudioSystem;
+import com.spatialaudiosystem.audio.AudioHashes;
+import com.spatialaudiosystem.audio.AudioOffers;
 import com.spatialaudiosystem.audio.AudioStorage;
 import com.spatialaudiosystem.audio.PlaybackSessionRegistry;
 import com.spatialaudiosystem.blockentity.RecordingDeviceBlockEntity;
@@ -84,6 +86,8 @@ public final class RecordingDeviceData {
     private static void startPreview(ServerLevel level, RecordingDeviceBlockEntity device, BlockPos pos) {
         byte[] audio;
         String format;
+        // The stored medium whose id the hash is remembered under; a pending upload has none yet.
+        ItemStack hashedMedium = null;
         if (device.getPendingAudioData() != null) {
             // A file was picked/uploaded but not yet written: preview it directly.
             audio = device.getPendingAudioData();
@@ -94,6 +98,7 @@ public final class RecordingDeviceData {
             audio = AudioStorage.loadForItem(level.getServer(), medium);
             if (audio == null) return;   // nothing to preview (no pending audio, empty output slot)
             format = medium.getOrDefault(ModDataComponents.AUDIO_FORMAT, "ogg");
+            hashedMedium = medium;
         }
 
         long playbackId = PlaybackSessionRegistry.begin(level, pos);
@@ -106,10 +111,9 @@ public final class RecordingDeviceData {
                 // because it is a check on the medium rather than a sound already running.
                 // Not synchronised: a preview is a check on the medium in your hand, so it
                 // starts at the top rather than wherever a shared sound has got to.
-                false, 0, false, 0L);
+                false, 0, false, AudioHashes.of(hashedMedium, audio), 0L);
         for (ServerPlayer sp : level.players()) {
-            PacketDistributor.sendToPlayer(sp, meta);
-            ClientAudioChunkPayload.sendChunked(sp, pos, playbackId, audio);
+            AudioOffers.offer(sp, meta, audio);
         }
     }
 

@@ -1,14 +1,12 @@
 package com.spatialaudiosystem.audio;
 
 import com.spatialaudiosystem.SpatialAudioSystem;
-import com.spatialaudiosystem.network.ClientAudioChunkPayload;
 import com.spatialaudiosystem.network.ClientPlayAudioPayload;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
@@ -92,7 +90,7 @@ public final class PlaybackDelivery {
         // Zero: these players are here for the start, so there is nothing for them to catch up on.
         ClientPlayAudioPayload meta = new ClientPlayAudioPayload(
                 pos, playbackId, audioData.length, format, rangePos1, rangePos2,
-                attenuationMode, attenuationRanges, loop, 0, true, 0L);
+                attenuationMode, attenuationRanges, loop, 0, true, AudioHashes.of(media, audioData), 0L);
         for (ServerPlayer player : level.players()) {
             // Filtered for an endless sound only. A one-shot's completion is reported by a
             // client, and the schedule advances on that report -- so a one-shot that reached
@@ -109,8 +107,8 @@ public final class PlaybackDelivery {
                         rangePos1, rangePos2, attenuationMode, attenuationRanges, "start"));
                 continue;
             }
-            PacketDistributor.sendToPlayer(player, meta);
-            ClientAudioChunkPayload.sendChunked(player, pos, playbackId, audioData);
+            // The audio itself follows only if this player answers that it does not keep it.
+            AudioOffers.offer(player, meta, audioData);
             PlaybackSessionRegistry.markDelivered(level.dimension(), pos, playbackId, player.getUUID());
             SIGNAL.info("sent {}", describe(level, pos, playbackId, loop, player,
                     rangePos1, rangePos2, attenuationMode, attenuationRanges, "start"));
@@ -206,12 +204,11 @@ public final class PlaybackDelivery {
         int offsetMillis = (int) Math.min(
                 ClientPlayAudioPayload.MAX_START_OFFSET_MILLIS, elapsedTicks * MILLIS_PER_TICK);
 
-        PacketDistributor.sendToPlayer(player, new ClientPlayAudioPayload(
+        AudioOffers.offer(player, new ClientPlayAudioPayload(
                 pending.pos(), pending.playbackId(), audioData.length, replay.format(),
                 replay.rangePos1(), replay.rangePos2(),
                 replay.attenuationMode(), replay.attenuationRanges(), replay.loop(),
-                offsetMillis, true, 0L));
-        ClientAudioChunkPayload.sendChunked(player, pending.pos(), pending.playbackId(), audioData);
+                offsetMillis, true, AudioHashes.of(replay.media(), audioData), 0L), audioData);
         PlaybackSessionRegistry.markDelivered(
                 level.dimension(), pending.pos(), pending.playbackId(), player.getUUID());
         // wallMs is the same age by the wall clock. The offset is ticks; the sound on every
