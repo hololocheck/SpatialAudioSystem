@@ -909,10 +909,16 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    /** Release over a popup slot: the click already ran on press, so the release is a no-op. */
+    /**
+     * Release over a popup slot: the click already ran on press, so the release is a no-op - unless a
+     * quick-craft is running. A press on a popup slot never starts one (it is issued above), so a running
+     * one began outside the popup, and swallowing its end left the distribution open until the next
+     * release (TSU's identical swallow, measured 2026-10-02). The base hands a release over a slot the
+     * consumer placed to vanilla, which ends the distribution.
+     */
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (schedulePopup.isOpen() && button >= 0 && button <= 2
+        if (!this.isQuickCrafting && schedulePopup.isOpen() && button >= 0 && button <= 2
                 && hoveredPlaylistSlot(mouseX, mouseY) != null) {
             return true;
         }
