@@ -1,5 +1,7 @@
 package com.spatialaudiosystem.client;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 
 /**
@@ -33,7 +35,19 @@ public final class RecordingErrorState {
         return -1;
     }
 
-    public static void clear() {
-        pos = null;
+    /**
+     * Clears the refusal, as {@code requester} asks - only when it is the screen the player has open. The wiki's stand-in
+     * of the memory device is drawn inside the wiki and is never that screen, so one whose wiki mode does not answer its
+     * buttons itself still leaves the player's refusal showing (second reading, 2026-10-07).
+     */
+    public static void clear(Screen requester) {
+        clear(requester, Minecraft.getInstance().screen);
+    }
+
+    /** {@link #clear(Screen)}'s rule, on its parts. */
+    static void clear(Object requester, Object open) {
+        if (requester != null && requester == open) {
+            pos = null;
+        }
     }
 }

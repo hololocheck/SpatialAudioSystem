@@ -4,6 +4,7 @@ import com.spatialaudiosystem.SpatialAudioSystem;
 import com.spatialaudiosystem.network.AudioUploadChunkPayload;
 import com.spatialaudiosystem.network.AudioUploadStartPayload;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.PointerBuffer;
@@ -55,23 +56,42 @@ public final class AudioFilePickerService {
     private AudioFilePickerService() {}
 
     /**
-     * Opens the picker, reads the chosen file, and — if {@code stillOpen} still holds when
-     * the result returns — uploads it to {@code target} and reports the display info.
+     * Opens the picker for {@code requester}, reads the chosen file, and — if {@code stillOpen}
+     * still holds when the result returns — uploads it to {@code target} and reports the display
+     * info. Answers whether the picker opened: only for the screen the player has open. The
+     * wiki's stand-in of the memory device is drawn inside the wiki and is never that screen, so
+     * one whose wiki mode does not answer the file button itself still opens no dialog on the
+     * reader's client (second reading, 2026-10-07; the wiki's containment does not see a native
+     * dialog). This is the only SAS source that reaches TinyFileDialogs (the test holds it).
      *
      * @param stillOpen checked on the render thread; false means the screen has closed and
      *                  the result (and upload) is discarded.
      * @param onPicked  invoked on the render thread with the picked file's display info.
      */
-    public static void pickAndUpload(BlockPos target, BooleanSupplier stillOpen, Consumer<Picked> onPicked) {
-        Thread worker = new Thread(() -> runPick(
-                target, stillOpen, onPicked,
-                AudioFilePickerService::openDialog,
-                AudioFilePickerService::readBounded,
-                AudioFilePickerService::upload,
-                task -> Minecraft.getInstance().execute(task)),
-                "SSS-FileChooser");
-        worker.setDaemon(true);
-        worker.start();
+    public static boolean pickAndUpload(Screen requester, BlockPos target, BooleanSupplier stillOpen,
+                                        Consumer<Picked> onPicked) {
+        return launch(requester, Minecraft.getInstance().screen, () -> {
+            Thread worker = new Thread(() -> runPick(
+                    target, stillOpen, onPicked,
+                    AudioFilePickerService::openDialog,
+                    AudioFilePickerService::readBounded,
+                    AudioFilePickerService::upload,
+                    task -> Minecraft.getInstance().execute(task)),
+                    "SSS-FileChooser");
+            worker.setDaemon(true);
+            worker.start();
+        });
+    }
+
+    /** {@link #pickAndUpload}'s first rule: {@code start} runs only when the requester is the open screen. */
+    static boolean launch(Object requester, Object open, Runnable start) {
+        if (requester == null || requester != open) {
+            SpatialAudioSystem.LOGGER.info("[AudioFilePicker] refused: {} is not the open screen",
+                    requester == null ? "null" : requester.getClass().getSimpleName());
+            return false;
+        }
+        start.run();
+        return true;
     }
 
     /**

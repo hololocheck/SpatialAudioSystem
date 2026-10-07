@@ -125,7 +125,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     private long closingAtNano;
 
     private final ScrollViewport listScroll =
-            new ScrollViewport(() -> HandyDeviceListClient.rows().size(), VISIBLE_ROWS);
+            new ScrollViewport(() -> rows().size(), VISIBLE_ROWS);
     private final TextInputController nameInput =
             new TextInputController(SoundDeviceRegistry.MAX_NAME_CODE_POINTS, "")
                     .onSubmit(this::submitName)
@@ -133,7 +133,10 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     private final ToggleSwitchController hudToggle = new ToggleSwitchController("hd-hud-track", "hd-hud-knob",
             () -> !handy().getOrDefault(ModDataComponents.HANDY_HUD_HIDDEN, false), this::setHudShown);
     private final ToggleSwitchController layoutToggle = new ToggleSwitchController("hd-layout-track", "hd-layout-knob",
-            SoundHandyLayoutState::layoutAdjustMode, SoundHandyLayoutState::setLayoutAdjustMode);
+            this::layoutAdjust, v -> {
+                if (this.wikiHandy != null) this.wikiLayoutAdjust = v;
+                else SoundHandyLayoutState.setLayoutAdjustMode(v);
+            });
 
     // ===== Manta 7 push (Phase 4, 2026-09-23) =====
     // Every value of the page is WRITTEN here each frame before the engine draws (render and
@@ -158,11 +161,33 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     }
 
     /**
-     * A handy screen for BelugaAOS's UI sweep ({@code SasWikiLiveCapture}'s table). The item is not read here, so a
-     * fresh handy stands in for the one in the player's hand.
+     * The wiki's stand-in (改善1, 2026-10-07): a handy of its own, devices of its own and a layout flag of its own - the
+     * screen otherwise reads the handy in the player's hand, the device list the server sent this client and the
+     * client's layout state, and writes the first and the last. Null for a real screen.
+     */
+    private ItemStack wikiHandy = null;
+    private java.util.List<HandyDeviceRow> wikiRows = null;
+    private boolean wikiLayoutAdjust = false;
+
+    /**
+     * A handy screen for the wiki and BelugaAOS's UI sweep ({@code SasWikiLiveCapture}'s table): a fresh handy, and four
+     * devices - one with a medium and a board, one with a medium, one without a medium and one not loaded, so each state
+     * of the list's dot shows.
      */
     public static SoundHandyScreen wikiCreate() {
-        return new SoundHandyScreen(new ItemStack(ModItems.SOUND_HANDY.get()));
+        SoundHandyScreen s = new SoundHandyScreen(new ItemStack(ModItems.SOUND_HANDY.get()));
+        s.wikiHandy = new ItemStack(ModItems.SOUND_HANDY.get());
+        net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> world = net.minecraft.world.level.Level.OVERWORLD;
+        s.wikiRows = new java.util.ArrayList<>(java.util.List.of(
+                new HandyDeviceRow(GlobalPos.of(world, new net.minecraft.core.BlockPos(120, 64, -45)), "1番線 発車メロディ",
+                        true, false, true, true, "departure_melody.mp3", "mp3"),
+                new HandyDeviceRow(GlobalPos.of(world, new net.minecraft.core.BlockPos(96, 65, -30)), "改札前 案内放送",
+                        true, false, true, false, "announce_next.mp3", "mp3"),
+                new HandyDeviceRow(GlobalPos.of(world, new net.minecraft.core.BlockPos(128, 64, -60)), "2番線 接近チャイム",
+                        true, false, false, false, "", ""),
+                new HandyDeviceRow(GlobalPos.of(world, new net.minecraft.core.BlockPos(420, 70, 210)), "車庫 構内放送",
+                        false, false, true, false, "yard_notice.ogg", "ogg")));
+        return s;
     }
 
     /**
@@ -212,7 +237,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         super.init();   // parses the layout and places the dialog from dialogAnchor
         // The list is pushed on every change, but a fresh copy at open costs one packet and
         // covers a handy picked up before the client had the list (init re-runs on resize).
-        if (!listRequested) {
+        if (!listRequested && wikiRows == null) {
             listRequested = true;
             HandyClient.action(HandyActions.REQUEST_LIST, 0, null);
         }
@@ -345,7 +370,10 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         if (closing || slideOffsetY() != 0f) return true;
         // Same for the device page's own slide: a button in motion must not act (review 2026-09-05).
         if (devPageOffset() != 0f) return true;
-        if (SoundHandyLayoutState.layoutAdjustMode() && button == 0 && beginDrag(mouseX, mouseY)) return true;
+        // The stand-in's layout flag moves nothing: the offsets it would drag are the client's own.
+        if (wikiHandy == null && SoundHandyLayoutState.layoutAdjustMode() && button == 0 && beginDrag(mouseX, mouseY)) {
+            return true;
+        }
         return super.mouseClicked(mouseX, mouseY, button);   // the base maps the screen point itself
     }
 
@@ -467,7 +495,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
                 g.renderItem(SoundHandyHudRenderer.deviceIcon(), x, y);
             }
         }
-        if (SoundHandyLayoutState.layoutAdjustMode()) renderLayoutAdjust(g);
+        if (layoutAdjust()) renderLayoutAdjust(g);
     }
 
     /**
@@ -496,19 +524,39 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
 
     // ---- what the screen reads ------------------------------------------------------------
 
-    /** The handy in the player's hand, or empty once it is put away (every action is then a no-op). */
-    private static ItemStack handy() {
+    /** The handy in the player's hand, or empty once it is put away (every action is then a no-op); the stand-in's own. */
+    private ItemStack handy() {
+        if (wikiHandy != null) return wikiHandy;
         Minecraft mc = Minecraft.getInstance();
         return mc.player == null ? ItemStack.EMPTY : SoundHandyItem.held(mc.player);
     }
 
-    private static GlobalPos selectedPos() {
+    /** The devices the server sent this client - or the stand-in's own. */
+    private java.util.List<HandyDeviceRow> rows() {
+        return wikiRows != null ? wikiRows : HandyDeviceListClient.rows();
+    }
+
+    private boolean layoutAdjust() {
+        return wikiHandy != null ? wikiLayoutAdjust : SoundHandyLayoutState.layoutAdjustMode();
+    }
+
+    private GlobalPos selectedPos() {
         return handy().get(ModDataComponents.HANDY_SELECTED_DEVICE);
     }
 
-    private static HandyDeviceRow selectedRow() {
-        int i = HandyDeviceListClient.selectedIndex(handy());
-        return i < 0 ? null : HandyDeviceListClient.rowAt(i);
+    /** The selected device's index in {@link #rows()}, as {@code HandyDeviceListClient.selectedIndex} finds it. */
+    private int selectedIndex() {
+        GlobalPos pos = selectedPos();
+        java.util.List<HandyDeviceRow> r = rows();
+        for (int i = 0; pos != null && i < r.size(); i++) {
+            if (r.get(i).pos().equals(pos)) return i;
+        }
+        return -1;
+    }
+
+    private HandyDeviceRow selectedRow() {
+        int i = selectedIndex();
+        return i < 0 ? null : rows().get(i);
     }
 
     /** The list index under the repeat row being resolved (window offset applied), or -1. */
@@ -519,7 +567,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
 
     private HandyDeviceRow rowAtRepeat() {
         int i = rowIndexAtRepeat();
-        List<HandyDeviceRow> rows = HandyDeviceListClient.rows();
+        List<HandyDeviceRow> rows = rows();
         return i >= 0 && i < rows.size() ? rows.get(i) : null;
     }
 
@@ -619,11 +667,11 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         pushed.set(bTabDevice, pages.is(Page.DEVICE) && sel != null);
         pushed.set(bTabSettings, pages.is(Page.SETTINGS));
         pushed.set(bScrollbar, pages.is(Page.LIST) && listScroll.needsScrollbar());
-        List<HandyDeviceRow> rows = HandyDeviceListClient.rows();
+        List<HandyDeviceRow> rows = rows();
         pushed.set(bListEmpty, rows.isEmpty());
         int count = pages.is(Page.LIST) ? listScroll.rowCount() : 0;
         pushed.set(nCount, count);
-        int selected = HandyDeviceListClient.selectedIndex(handy());
+        int selected = selectedIndex();
         for (int r = 0; r < count; r++) {
             int i = r + listScroll.offset();   // the window's offset, as rowIndexAtRepeat applies it
             HandyDeviceRow row = i >= 0 && i < rows.size() ? rows.get(i) : null;
@@ -661,7 +709,7 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         if (layoutToggle.handleClick(classes)) return;
         for (String c : classes) {
             if ("hd-layout-reset".equals(c)) {
-                SoundHandyLayoutState.reset();
+                if (wikiHandy == null) SoundHandyLayoutState.reset();
                 return;
             }
             switch (c) {
@@ -743,6 +791,10 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
 
     private void sendAtSelected(int action) {
         GlobalPos pos = selectedPos();
+        if (wikiRows != null) {
+            wikiAct(action, pos);
+            return;
+        }
         if (handy().isEmpty()) return;
         if (pos == null) {
             // Silence here was read as "the button does nothing" on the real device (2026-09-05).
@@ -759,7 +811,23 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
      * that knows what it holds - a missing copy would throw inside the menu's client
      * constructor, so it is refused here first with the same message.
      */
+    /**
+     * The stand-in's play / stop on its own rows, as the list the server pushes after one would read: a loaded device
+     * with a medium plays, a stop stops it. A test sounds for the holder alone and changes no row.
+     */
+    private void wikiAct(int action, GlobalPos pos) {
+        for (int i = 0; pos != null && i < wikiRows.size(); i++) {
+            HandyDeviceRow r = wikiRows.get(i);
+            if (!r.pos().equals(pos) || !r.loaded()) continue;
+            boolean playing = action == HandyActions.PLAY ? r.hasMedium() : action != HandyActions.STOP && r.playing();
+            wikiRows.set(i, new HandyDeviceRow(r.pos(), r.name(), r.loaded(), playing, r.hasMedium(), r.hasBoard(),
+                    r.mediumFile(), r.mediumFormat()));
+        }
+    }
+
     private void openRemote() {
+        // The stand-in's devices are nowhere in the world: its page goes on with the device screen's own stand-in.
+        if (wikiRows != null) return;
         GlobalPos pos = selectedPos();
         Minecraft mc = Minecraft.getInstance();
         if (pos == null || handy().isEmpty() || mc.level == null) return;
@@ -784,6 +852,8 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
     }
 
     private void beginName() {
+        // A press on the box being edited keeps the edit: it used to start over from the stored name (改善1, 2026-10-07).
+        if (nameInput.isFocused()) return;
         HandyDeviceRow r = selectedRow();
         if (r == null) return;
         nameInput.setValue(r.name());
@@ -792,7 +862,16 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
 
     private void submitName() {
         GlobalPos pos = selectedPos();
-        if (pos != null && !handy().isEmpty()) {
+        if (wikiRows != null) {
+            // The stand-in renames its own row, as the registry would (sanitised, empty = no name).
+            int i = selectedIndex();
+            if (i >= 0) {
+                HandyDeviceRow r = wikiRows.get(i);
+                String name = SoundDeviceRegistry.sanitizeName(nameInput.value());
+                wikiRows.set(i, new HandyDeviceRow(r.pos(), name == null ? "" : name, r.loaded(), r.playing(),
+                        r.hasMedium(), r.hasBoard(), r.mediumFile(), r.mediumFormat()));
+            }
+        } else if (pos != null && !handy().isEmpty()) {
             HandyClient.rename(pos, nameInput.value());
         }
         nameInput.blur();

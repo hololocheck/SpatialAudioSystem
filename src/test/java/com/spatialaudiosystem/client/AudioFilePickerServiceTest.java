@@ -133,6 +133,56 @@ class AudioFilePickerServiceTest {
     }
 
     @Test
+    @DisplayName("the picker opens only for the screen the player has open - never for the wiki's stand-in")
+    void thePickerStartsOnlyForTheOpenScreen() {
+        Object open = new Object();
+        Object standIn = new Object();
+        int[] started = {0};
+        assertThat(AudioFilePickerService.launch(open, open, () -> started[0]++)).as("the open screen asks").isTrue();
+        assertThat(started[0]).isEqualTo(1);
+        assertThat(AudioFilePickerService.launch(standIn, open, () -> started[0]++))
+                .as("a screen that is not the open one (the wiki's stand-in) asks").isFalse();
+        assertThat(AudioFilePickerService.launch(null, null, () -> started[0]++)).as("no requester").isFalse();
+        assertThat(started[0]).as("nothing started for the refused requests").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("no SAS source but the picker reaches TinyFileDialogs, so a new file button cannot go around the rule")
+    void noSasSourceButThePickerReachesTinyFileDialogs() throws IOException {
+        Path src = null;
+        for (Path base = Path.of("").toAbsolutePath(); base != null && src == null; base = base.getParent()) {
+            if (Files.isDirectory(base.resolve("src/main/java/com/spatialaudiosystem"))) src = base.resolve("src");
+        }
+        assertThat(src).as("src/main/java/com/spatialaudiosystem found upwards from the working directory").isNotNull();
+        List<String> others = new ArrayList<>();
+        int scanned = 0;
+        boolean ownFound = false;
+        List<Path> sets;
+        try (java.util.stream.Stream<Path> list = Files.list(src)) {
+            sets = list.filter(p -> Files.isDirectory(p.resolve("java")) && !p.getFileName().toString().equals("test"))
+                    .sorted().toList();
+        }
+        for (Path set : sets) {
+            List<Path> files;
+            try (java.util.stream.Stream<Path> walk = Files.walk(set.resolve("java"))) {
+                files = walk.filter(p -> p.getFileName().toString().endsWith(".java")).sorted().toList();
+            }
+            for (Path f : files) {
+                scanned++;
+                boolean names = Files.readString(f).contains("org.lwjgl.util.tinyfd");
+                if (f.getFileName().toString().equals("AudioFilePickerService.java")) {
+                    ownFound |= names;
+                } else if (names) {
+                    others.add(src.relativize(f).toString().replace('\\', '/'));
+                }
+            }
+        }
+        assertThat(ownFound).as("AudioFilePickerService.java naming org.lwjgl.util.tinyfd found - something was judged").isTrue();
+        assertThat(scanned).as("sources read in " + sets).isGreaterThan(50);
+        assertThat(others).as("sources reaching TinyFileDialogs around the picker").isEmpty();
+    }
+
+    @Test
     @DisplayName("SAS-UI-009: the size guard reads a file within the cap and refuses empty/oversized without reading")
     void readBoundedEnforcesTheSizeCap(@TempDir Path dir) throws IOException {
         Path clip = dir.resolve("clip.wav");

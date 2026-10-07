@@ -1,0 +1,65 @@
+{
+  "schema": "manta-playback/1",
+  "loop": true,
+  "restartHoldMs": 1500,
+  "steps": [
+    {
+      "target": {
+        "classes": [
+          "hd-hud-track"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.hud",
+      "holdMs": 1300
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-hud-track"
+        ]
+      },
+      "do": "click",
+      "holdMs": 900
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-layout-track"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.layout",
+      "holdMs": 1700
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-layout-track"
+        ]
+      },
+      "do": "click",
+      "holdMs": 900
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-layout-reset"
+        ]
+      },
+      "do": "hover",
+      "say": "sas.wiki.play.hd.reset",
+      "holdMs": 1300
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-nav-list"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.nav",
+      "holdMs": 1500
+    }
+  ]
+}

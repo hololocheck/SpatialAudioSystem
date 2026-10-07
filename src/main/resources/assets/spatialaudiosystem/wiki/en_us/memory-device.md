@@ -25,7 +25,7 @@ The block that writes an audio file from your PC onto a **recording medium**. On
 | Pick an audio file | Click **Select File** — your OS file dialog opens |
 | Insert a medium | Put an empty recording medium in the **input slot** |
 | Write it | Click **●**. The arrow bar fills, and the result moves to the output slot |
-| Clear the selection | Click **×** |
+| Clear the selection | Click **×** (the media in the device lose their sound too) |
 | Preview | **▶ / ■** — plays the finished medium if there is one, otherwise the pending file |
 | Public / private | Click the **face icon** in the lower right |
 

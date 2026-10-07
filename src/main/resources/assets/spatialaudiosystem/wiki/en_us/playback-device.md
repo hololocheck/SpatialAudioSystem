@@ -23,10 +23,14 @@ The block that plays media written by the [Memory Device](memory-device.md). It 
 |---|---|
 | Play one medium | Put it in the **media slot** and click **▶** |
 | Stop | Click **■** — this stops a single medium and a running schedule alike |
+| Repeat until stopped | Click **↻** (while it is lit, the medium keeps playing) |
+| Name the device | Click the **title box** at the top, type, and press **Enter** |
 | Set the range | Put a [Range Board](tools/range-board.md) in the **range slot** |
-| Toggle attenuation | The **Attenuate** switch |
-| Show the range | The **Show Range** switch |
-| Build a sequence | Turn the **schedule toggle on** → the **♪ Schedule** button → [schedule screen](playback-device/schedule.md) |
+| The range without a board | **Scroll over the range value** (not used while a board is in) |
+| Toggle attenuation | The **Fade** switch |
+| Show the range | The **Range** switch |
+| Build a sequence | The **♪ Schedule** button → [schedule screen](playback-device/schedule.md) |
+| Drive redstone with it | The red-framed button right of **↻** → [Redstone Output](playback-device/redstone.md) |
 | Public / private | The **face icon** on the right |
 
 ## Reading the screen
@@ -41,16 +45,17 @@ The block that plays media written by the [Memory Device](memory-device.md). It 
 | ♪ Schedule | Opens the sequence editor |
 
 > [!TIP]
-> Sound still plays with an empty range slot, but only the default fade applies. Insert a [Range Board](tools/range-board.md) to confine it to the area you meant.
+> Sound still plays with an empty range slot: with **Fade** on it fades out over the **range value** (scroll over it), with Fade off the value is not used and only a fixed ambient fade applies. Insert a [Range Board](tools/range-board.md) to confine it to the area you meant.
 
 > [!NOTE]
 > **One stop for everything.** The **■** button halts a single medium and a running [♪ Schedule](playback-device/schedule.md) sequence alike.
 
 > [!NOTE]
-> **While the schedule toggle is on, the media slot is barred with a ✕.** Shift-clicked media goes into the schedule's free rows, and **▶ starts the schedule** instead of a single medium; switch the toggle off to return to single play.
+> **While the schedule screen's toggle is on, the media slot is barred with a ✕.** Shift-clicked media goes into the schedule's free rows, and **▶ starts the schedule** instead of a single medium; switch the toggle off to return to single play.
 
 ## Related
 
 - [♪ Schedule](playback-device/schedule.md) — play several in order
+- [Redstone Output](playback-device/redstone.md) — a signal along with what it plays
 - [Memory Device](memory-device.md) — create media
 - [Range Board](tools/range-board.md) — define range and fade

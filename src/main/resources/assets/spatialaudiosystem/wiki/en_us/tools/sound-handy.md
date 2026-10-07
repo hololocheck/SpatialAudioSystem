@@ -41,13 +41,17 @@ A device without a board cannot be edited (the HUD says so). In the range mode t
 
 ## The screen
 
+![](bws:spatialaudiosystem:wiki/screens/sound-handy-list__en_us.png)
+
 A small panel in the bottom-right corner (slides up from the bottom). It always opens on the list.
 
 - **List**: your devices - the playback device's icon, name and position, and a dot for the state (green = holds a medium, red = no medium, dark = not loaded). Click a row and that device's page slides in from the left (the arrow slides it out).
 - **Device** (from a row): the name (click to edit, Enter saves), position and state, with Play / Stop / Test / Stop test / Open device. The arrow returns to the list.
   - **Test** plays the device's medium for you alone, where you stand (nobody else hears it).
   - **Open device** opens the device's own screen from where you are, while its chunk has reached your client.
-- **Settings**: the mini HUD.
+- **Settings**: **show the HUD badge** (the mini HUD while you hold the handy) and **layout adjust** (while it is on, drag the panel by its header and the mini HUD to move them; **Reset positions** puts them back).
+
+![](bws:spatialaudiosystem:wiki/screens/sound-handy-settings__en_us.png)
 
 A device can also be named from its own screen (click the title box).
 

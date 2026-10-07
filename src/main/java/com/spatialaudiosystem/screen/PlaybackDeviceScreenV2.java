@@ -35,7 +35,8 @@ import java.util.UUID;
  * condition, detection-card, or station-share features. The overlay's per-entry media slots are
  * the block entity's playlist slots, repositioned each frame over their row frames.
  */
-public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu> {
+public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
+        implements com.manta.api.wiki.WikiLocalMenu {
 
     /** Every value on this screen's pages is pushed (MANTA_7_CONCEPT §4.2): a page asks it nothing. */
     @Override
@@ -236,6 +237,21 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     protected String wikiPageId() { return "playback-device"; }
 
     /**
+     * The wiki's stand-in (改善1, 2026-10-07): there is no device to send to, so what the server does with an action is done
+     * to the dummy block entity here ({@link #wikiApply}) - minus the sound. Null for a real screen.
+     */
+    private boolean wikiMode = false;
+
+    /**
+     * The stand-in opens its throwaway menu to the wiki, its inventory rows shown: the pages press its slots - the main
+     * page takes the range board out, the schedule's puts a medium from the hotbar into a new entry.
+     */
+    @Override
+    public boolean wikiLocalMenu() {
+        return wikiMode;
+    }
+
+    /**
      * Wiki capture: a stand-alone screen over a dummy block entity with a loaded medium, a range
      * board and a few schedule entries, so both the main shot and the schedule shot show content.
      */
@@ -255,9 +271,14 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
             be.getPlaylist().setStackInSlot(i, sampleMedium(entries[i]));
             be.setPlayCount(i, i + 1);
         }
-        Inventory inv = new Inventory(mc.player);   // empty: keep the player's own items out of the shot
-        return new PlaybackDeviceScreenV2(new PlaybackDeviceMenu(0, inv, be), inv,
+        // A throwaway inventory, so the player's own items stay out of the shot: one medium in its hotbar, which the
+        // schedule page shift-clicks into a new entry.
+        Inventory inv = new Inventory(mc.player);
+        inv.setItem(0, sampleMedium("platform_bell.ogg"));
+        PlaybackDeviceScreenV2 s = new PlaybackDeviceScreenV2(new PlaybackDeviceMenu(0, inv, be), inv,
                 Component.translatable("block.spatialaudiosystem.playback_device"));
+        s.wikiMode = true;
+        return s;
     }
 
     private static ItemStack sampleMedium(String fileName) {
@@ -267,13 +288,21 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         return s;
     }
 
-    /** Wiki capture: force the shot to the main view or to the armed, open schedule popup. */
+    /**
+     * Wiki capture: force the shot to the main view, to the armed, open schedule popup, or to the redstone dialog with the
+     * output on and one rule - a lamp lit while the device plays - so the dialog shows a rule before the page adds one.
+     */
     public void wikiApplyState(String state) {
         boolean sched = "schedule".equals(state);
         schedulePopup.setOpen(sched);
         scheduleModeOn = sched;
         if (sched && !be().isScheduleMode()) be().toggleScheduleMode();   // dummy client BE: no packets
         scheduleOpenedAtNanos = 0L;   // no open animation, and slot items draw immediately
+        if ("redstone".equals(state)) {
+            redstonePopup.setOpen(true);
+            be().setRedstoneEnabled(true);
+            if (be().getRedstoneRules().isEmpty()) be().addRedstoneRule();
+        }
     }
 
     @Override
@@ -661,7 +690,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         if (schedulePlaybackToggle.handleClick(classes)) return;
         if (redstonePopup.isOpen() && redstoneToggle.handleClick(classes)) return;
         if (com.manta.api.hud.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
-            sendButtonClick(com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON);
+            if (wikiMode) be().togglePrivateMode();   // the stand-in's ring turns as the server's answer would turn it
+            else sendButtonClick(com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON);
             return;
         }
         for (String c : classes) {
@@ -1059,6 +1089,8 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
 
     /** Click on the title: edit the name in place (the current name is the starting text). */
     private void beginName() {
+        // A press on the box being edited keeps the edit: it used to start over from the stored name (改善1, 2026-10-07).
+        if (nameInput.isFocused()) return;
         String name = be().getDeviceName();
         nameInput.setValue(name == null ? "" : name);
         nameInput.focus();
@@ -1106,6 +1138,10 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     private com.manta.api.data.Mirror data;
 
     private void send(String action, Object... args) {
+        if (wikiMode) {
+            wikiApply(action, args);
+            return;
+        }
         if (data == null) {
             PlaybackDeviceBlockEntity be = be();
             if (be.getLevel() == null) return;
@@ -1113,6 +1149,59 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
                     PlaybackDeviceData.schema());
         }
         data.send(action, args);
+    }
+
+    /**
+     * The stand-in's action on its dummy block entity, as {@code PlaybackDeviceData} applies it on the server - without the
+     * sound: a play marks the device playing (the schedule's on its first entry, a test on its row), a stop clears that.
+     * The range, the play count and the redstone rules the screen already applied itself, optimistically; a rename and
+     * the toggles' own flags are local too. Nothing leaves the screen.
+     */
+    private void wikiApply(String action, Object... args) {
+        PlaybackDeviceBlockEntity be = be();
+        switch (action) {
+            case "playback" -> {
+                boolean on = Boolean.TRUE.equals(args[0]);
+                be.setPlayingEntry(-1);
+                be.setIsPlaying(on);
+            }
+            case "rename" -> be.setDeviceName((String) args[0]);
+            case "playlist" -> {
+                int op = (Integer) args[0];
+                int a1 = (Integer) args[1];
+                int a2 = (Integer) args[2];
+                switch (op) {
+                    case PlaybackDeviceData.PLAYLIST_PLAY_ALL -> {
+                        if (be.getEntryCount() > 0) {
+                            be.setPlayingEntry(0);
+                            be.setIsPlaying(true);
+                        }
+                    }
+                    case PlaybackDeviceData.PLAYLIST_TEST -> {
+                        be.setPlayingEntry(a1);
+                        be.setIsPlaying(true);
+                    }
+                    case PlaybackDeviceData.PLAYLIST_STOP -> {
+                        be.setPlayingEntry(-1);
+                        be.setIsPlaying(false);
+                    }
+                    case PlaybackDeviceData.PLAYLIST_ADD_ENTRY -> be.addEntry();
+                    case PlaybackDeviceData.PLAYLIST_REMOVE_ENTRY -> {
+                        be.setPlayingEntry(-1);
+                        ItemStack medium = be.removeEntry(a1);
+                        // Handed back as the server hands it to the player: into the stand-in's own throwaway inventory.
+                        if (!medium.isEmpty() && this.menu.slots.get(PlaybackDeviceBlockEntity.SLOT_COUNT).container
+                                instanceof Inventory inv) {
+                            inv.add(medium);
+                        }
+                    }
+                    case PlaybackDeviceData.PLAYLIST_REORDER -> be.swapEntries(a1, a2);
+                    case PlaybackDeviceData.PLAYLIST_TOGGLE_MODE -> be.toggleScheduleMode(medium -> { });
+                    default -> { }
+                }
+            }
+            default -> { }
+        }
     }
 
     @Override

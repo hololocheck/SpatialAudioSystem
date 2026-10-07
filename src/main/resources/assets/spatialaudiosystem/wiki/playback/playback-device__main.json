@@ -3,9 +3,133 @@
   "loop": true,
   "restartHoldMs": 1500,
   "steps": [
-    { "target": { "classes": ["pb-play-btn"] }, "do": "hover", "say": "sas.wiki.play.pb.play", "holdMs": 1400 },
-    { "target": { "classes": ["pb-stop-btn"] }, "do": "hover", "say": "sas.wiki.play.pb.stop", "holdMs": 1300 },
-    { "target": { "classes": ["pb-loop-btn"] }, "do": "hover", "say": "sas.wiki.play.pb.loop", "holdMs": 1400 },
-    { "target": { "classes": ["pb-atten-range"] }, "do": "hover", "say": "sas.wiki.play.pb.range", "holdMs": 1600 }
+    {
+      "target": {
+        "classes": [
+          "pb-play-btn"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.play",
+      "holdMs": 1600
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-loop-btn"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.loop",
+      "holdMs": 1400
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-stop-btn"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.stop",
+      "holdMs": 1300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-title"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.name",
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-title"
+        ]
+      },
+      "do": "type",
+      "text": "1番線 発車ベル",
+      "charMs": 110,
+      "holdMs": 300
+    },
+    {
+      "do": "key",
+      "key": "enter",
+      "holdMs": 1200
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-range-slot"
+        ]
+      },
+      "do": "slot",
+      "quick": true,
+      "say": "sas.wiki.play.pb.board",
+      "holdMs": 900
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-atten-range"
+        ]
+      },
+      "do": "wheel",
+      "delta": -1,
+      "say": "sas.wiki.play.pb.range",
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-atten-range"
+        ]
+      },
+      "do": "wheel",
+      "delta": -1,
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-atten-range"
+        ]
+      },
+      "do": "wheel",
+      "delta": -1,
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-atten-range"
+        ]
+      },
+      "do": "wheel",
+      "delta": -1,
+      "holdMs": 1000
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-atten-track"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.atten",
+      "holdMs": 1400
+    },
+    {
+      "target": {
+        "classes": [
+          "owner-face-box"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.owner",
+      "holdMs": 1600
+    }
   ]
 }

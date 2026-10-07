@@ -36,7 +36,8 @@ public final class SasWikiLiveCapture {
      * One screen of this mod and the states it can be put in. {@code applyBeforeInit}: the state is applied before
      * {@code init} rather than after it — the playback device's schedule overlay is laid out during init, and its slot
      * positions come from the overlay origin init establishes. {@code photographed}: the wiki capture shoots it; a
-     * screen no page shows (the sound handy's page has no picture) is listed for the machine sweep alone.
+     * screen no page shows is listed for the machine sweep alone (none since 改善1, 2026-10-07: the sound handy's page
+     * shows it).
      *
      * <p>BelugaAOS reads {@link #table()} by reflection and SHOWS these screens on a world of its own run for its UI
      * sweep; the showing, and the containment it needs, live there and never here — the device factories build with
@@ -49,10 +50,13 @@ public final class SasWikiLiveCapture {
     static List<Entry> table() {
         return List.of(
             new Entry("memory-device", RecordingDeviceScreenV2::wikiCreate, NO_STATE, true, true, "main"),
+            // 改善1 (2026-10-07): the redstone dialog has a page of its own, and the sound handy's page shows the handy
+            // operated on devices of its own (SoundHandyScreen.wikiCreate).
             new Entry("playback-device", PlaybackDeviceScreenV2::wikiCreate,
-                    (s, st) -> ((PlaybackDeviceScreenV2) s).wikiApplyState(st), true, true, "main", "schedule"),
+                    (s, st) -> ((PlaybackDeviceScreenV2) s).wikiApplyState(st), true, true, "main", "schedule",
+                    "redstone"),
             new Entry("sound-handy", SoundHandyScreen::wikiCreate,
-                    (s, st) -> ((SoundHandyScreen) s).wikiApplyState(st), false, false, "list", "settings")
+                    (s, st) -> ((SoundHandyScreen) s).wikiApplyState(st), false, true, "list", "settings")
         );
     }
 

@@ -1,0 +1,121 @@
+{
+  "schema": "manta-playback/1",
+  "loop": true,
+  "restartHoldMs": 1500,
+  "steps": [
+    {
+      "target": {
+        "classes": [
+          "hd-row"
+        ],
+        "index": 0
+      },
+      "do": "hover",
+      "say": "sas.wiki.play.hd.list",
+      "holdMs": 1700
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-row-dot"
+        ],
+        "index": 2
+      },
+      "do": "hover",
+      "say": "sas.wiki.play.hd.dot",
+      "holdMs": 1700
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-row"
+        ],
+        "index": 0
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.open",
+      "holdMs": 1300
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-dev-play"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.play",
+      "holdMs": 1500
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-dev-stop"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.stop",
+      "holdMs": 1100
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-dev-test"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.test",
+      "holdMs": 1500
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-dev-name-box"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.name",
+      "holdMs": 300
+    },
+    {
+      "do": "key",
+      "key": "backspace",
+      "times": 4,
+      "holdMs": 200
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-dev-name-box"
+        ]
+      },
+      "do": "type",
+      "text": "ベル",
+      "charMs": 150,
+      "holdMs": 300
+    },
+    {
+      "do": "key",
+      "key": "enter",
+      "holdMs": 1100
+    },
+    {
+      "target": {
+        "classes": [
+          "hd-dev-open"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.hd.remote",
+      "holdMs": 500
+    },
+    {
+      "do": "screen",
+      "screen": {
+        "id": "playback-device",
+        "state": "main"
+      },
+      "say": "sas.wiki.play.hd.device",
+      "holdMs": 2200
+    }
+  ]
+}

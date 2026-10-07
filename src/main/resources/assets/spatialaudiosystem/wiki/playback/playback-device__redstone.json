@@ -1,0 +1,184 @@
+{
+  "schema": "manta-playback/1",
+  "loop": true,
+  "restartHoldMs": 1500,
+  "steps": [
+    {
+      "target": {
+        "classes": [
+          "pb-rs-trigger"
+        ],
+        "index": 0
+      },
+      "do": "hover",
+      "say": "sas.wiki.play.pb.lamp",
+      "holdMs": 1700
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-add-btn"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.rs_add",
+      "holdMs": 1000
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-trigger"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": 1,
+      "say": "sas.wiki.play.pb.trigger",
+      "holdMs": 1300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-strength"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": -1,
+      "say": "sas.wiki.play.pb.strength",
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-strength"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": -1,
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-strength"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": -1,
+      "holdMs": 900
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-delay"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": 1,
+      "say": "sas.wiki.play.pb.delay",
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-delay"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": 1,
+      "holdMs": 900
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-length"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": 1,
+      "say": "sas.wiki.play.pb.length",
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-length"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": 1,
+      "holdMs": 300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-length"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": 1,
+      "holdMs": 900
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-entry"
+        ],
+        "index": 1
+      },
+      "do": "wheel",
+      "delta": 1,
+      "say": "sas.wiki.play.pb.entry",
+      "holdMs": 1300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-up-btn"
+        ],
+        "index": 1
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.rs_order",
+      "holdMs": 1300
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-enabled-track"
+        ]
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.master",
+      "holdMs": 1400
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-enabled-track"
+        ]
+      },
+      "do": "click",
+      "holdMs": 700
+    },
+    {
+      "target": {
+        "classes": [
+          "pb-rs-del-btn"
+        ],
+        "index": 1
+      },
+      "do": "click",
+      "say": "sas.wiki.play.pb.rs_del",
+      "holdMs": 1500
+    }
+  ]
+}

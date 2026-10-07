@@ -32,7 +32,8 @@ import java.util.UUID;
  * The info panel shows the finished output medium's metadata when present, otherwise the
  * pending selection. The album-art jacket is drawn by M2 into the {@code rec-jacket} frame.
  */
-public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMenu> {
+public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMenu>
+        implements com.manta.api.wiki.WikiLocalMenu {
 
     /** Every value on this screen's pages is pushed (MANTA_7_CONCEPT §4.2): a page asks it nothing. */
     @Override
@@ -81,8 +82,93 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
         written.set(ModDataComponents.AUDIO_DURATION_SEC, 32);
         be.getInventory().setStackInSlot(RecordingDeviceBlockEntity.OUTPUT_SLOT, written);
         Inventory inv = new Inventory(mc.player);   // empty: keep the player's own items out of the shot
-        return new RecordingDeviceScreenV2(new RecordingDeviceMenu(0, inv, be), inv,
+        RecordingDeviceScreenV2 s = new RecordingDeviceScreenV2(new RecordingDeviceMenu(0, inv, be), inv,
                 Component.translatable("block.spatialaudiosystem.recording_device"));
+        s.wikiMode = true;
+        return s;
+    }
+
+    /**
+     * The wiki's stand-in (改善1, 2026-10-07): there is no file dialog, upload or server behind it, so its buttons do here
+     * what those would leave on the device ({@link #wikiClick}), and a write runs on the dummy block entity
+     * ({@link #wikiWriteTick}). False for a real screen.
+     */
+    private boolean wikiMode = false;
+
+    /** The stand-in opens its throwaway menu to the wiki: the page takes the written medium out of its output slot. */
+    @Override
+    public boolean wikiLocalMenu() {
+        return wikiMode;
+    }
+
+    /** When the stand-in's write began (System.nanoTime), 0 while none runs. */
+    private long wikiWriteStart = 0L;
+    /** How long the stand-in's write takes, and the demo file it writes. */
+    private static final long WIKI_WRITE_NANOS = 2_400_000_000L;
+    private static final String WIKI_FILE = "station_announce.mp3";
+    private static final int WIKI_DURATION_SEC = 24;
+
+    /**
+     * The stand-in's press: the file button picks the demo file as an upload would leave it pending, the clear does what
+     * the server's clear-audio does (the pick and the media's audio), the write starts as the server starts it, and a
+     * preview - a sound - does nothing on a page. The face turns the ring as the server's answer would.
+     */
+    private boolean wikiClick(String[] classes) {
+        RecordingDeviceBlockEntity be = this.menu.getBlockEntity();
+        if (com.manta.api.hud.OwnerAccess.isFaceClick(classes)) {
+            be.togglePrivateMode();
+            return true;
+        }
+        for (String c : classes) {
+            switch (c) {
+                case "rec-file-btn" -> {
+                    be.setPendingAudio(new byte[1], WIKI_FILE, "mp3");
+                    return true;
+                }
+                case "rec-clear-btn" -> {
+                    wikiWriteStart = 0L;
+                    be.clearPendingAudio();
+                    be.clearMediaAudioData();
+                    return true;
+                }
+                case "rec-start-btn" -> {
+                    if (wikiWriteStart == 0L && be.startRecording() == RecordingDeviceBlockEntity.START_OK) {
+                        wikiWriteStart = System.nanoTime();
+                    }
+                    return true;
+                }
+                case "rec-play-btn", "rec-stop-btn" -> {
+                    return true;
+                }
+                default -> { }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The stand-in's write, each frame: the progress the server's ticks would make, then the written medium in the output
+     * slot as finishRecording leaves it (a client level has no server to store the audio, so that is done here).
+     */
+    private void wikiWriteTick() {
+        RecordingDeviceBlockEntity be = this.menu.getBlockEntity();
+        float t = (System.nanoTime() - wikiWriteStart) / (float) WIKI_WRITE_NANOS;
+        if (t < 1f) {
+            int target = Math.max(1, (int) (t * (be.getMaxRecordingProgress() - 1)));
+            while (be.isRecording() && be.getRecordingProgress() < target) be.tickRecording();
+            return;
+        }
+        wikiWriteStart = 0L;
+        ItemStack input = be.getInventory().getStackInSlot(RecordingDeviceBlockEntity.INPUT_SLOT);
+        if (!input.isEmpty() && be.getPendingFileName() != null) {
+            ItemStack out = input.copy();
+            out.set(ModDataComponents.AUDIO_FILE_NAME, be.getPendingFileName());
+            out.set(ModDataComponents.AUDIO_FORMAT, be.getPendingFormat());
+            out.set(ModDataComponents.AUDIO_DURATION_SEC, WIKI_DURATION_SEC);
+            be.getInventory().setStackInSlot(RecordingDeviceBlockEntity.INPUT_SLOT, ItemStack.EMPTY);
+            be.getInventory().setStackInSlot(RecordingDeviceBlockEntity.OUTPUT_SLOT, out);
+        }
+        be.clearPendingAudio();
     }
 
     @Override
@@ -134,6 +220,7 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        if (wikiWriteStart != 0L) wikiWriteTick();
         pollRefusal();
         pushAll();
         super.render(g, mouseX, mouseY, partialTick);
@@ -209,6 +296,7 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
 
     @Override
     protected void handleMainClick(String[] classes, int mouseX, int mouseY, int button) {
+        if (wikiMode && wikiClick(classes)) return;
         if (com.manta.api.hud.OwnerAccess.isFaceClick(classes)) {   // toggle public/private
             sendButtonClick(com.manta.api.hud.OwnerAccess.TOGGLE_BUTTON);
             return;
@@ -217,20 +305,21 @@ public class RecordingDeviceScreenV2 extends JsonLayoutScreen<RecordingDeviceMen
             // hint toggle / wiki-btn / mc-popup-close は基底が先に処理する (A11)。
             if ("mc-popup-close".equals(c)) { onClose(); return; }
             if ("rec-file-btn".equals(c)) {
-                RecordingErrorState.clear();
+                RecordingErrorState.clear(this);
                 AudioFilePickerService.pickAndUpload(
+                        this,
                         pos(),
                         () -> Minecraft.getInstance().screen == this,
                         picked -> { });   // the pending name/format come back via block-entity sync
                 return;
             }
             if ("rec-start-btn".equals(c)) {
-                RecordingErrorState.clear();
+                RecordingErrorState.clear(this);
                 send("start-recording");
                 return;
             }
             if ("rec-clear-btn".equals(c)) {
-                RecordingErrorState.clear();
+                RecordingErrorState.clear(this);
                 send("clear-audio");
                 return;
             }
