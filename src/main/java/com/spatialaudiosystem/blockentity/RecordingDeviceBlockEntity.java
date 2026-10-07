@@ -184,7 +184,8 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
             if (!stack.isEmpty() && (stack.has(ModDataComponents.AUDIO_DATA)
                     || stack.has(ModDataComponents.AUDIO_FILE_NAME)
                     || stack.has(ModDataComponents.AUDIO_FORMAT)
-                    || stack.has(ModDataComponents.AUDIO_ID))) {
+                    || stack.has(ModDataComponents.AUDIO_ID)
+                    || stack.has(ModDataComponents.AUDIO_DURATION_SEC))) {
                 // Only the medium's own reference is dropped. The file stays: the same
                 // audio id can sit on any number of copied stacks, and this device cannot
                 // see the others.
@@ -193,6 +194,9 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
                 cleaned.remove(ModDataComponents.AUDIO_DATA);
                 cleaned.remove(ModDataComponents.AUDIO_FILE_NAME);
                 cleaned.remove(ModDataComponents.AUDIO_FORMAT);
+                // The length goes with the sound (SAS-AUDIO-015). The check asks after it alone
+                // too: a medium this cleared before 2026-10-07 kept its length and nothing else.
+                cleaned.remove(ModDataComponents.AUDIO_DURATION_SEC);
                 inventory.setStackInSlot(i, cleaned);
             }
         }
@@ -251,6 +255,7 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
             // Duration を計算して保存 (整数秒、不能なら 0)
             int durSec = com.spatialaudiosystem.audio.AudioDuration.compute(pendingAudioData, pendingFormat);
             if (durSec > 0) outputStack.set(ModDataComponents.AUDIO_DURATION_SEC, durSec);
+            else outputStack.remove(ModDataComponents.AUDIO_DURATION_SEC);   // not the length of a sound written before
 
             inventory.setStackInSlot(INPUT_SLOT, ItemStack.EMPTY);
             inventory.setStackInSlot(OUTPUT_SLOT, outputStack);
