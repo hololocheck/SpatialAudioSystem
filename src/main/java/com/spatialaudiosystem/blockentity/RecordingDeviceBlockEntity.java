@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.world.Clearable;
 import net.minecraft.world.Containers;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
@@ -24,7 +25,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
-public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvider, OwnedDevice {
+public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvider, OwnedDevice, Clearable {
     public static final int INPUT_SLOT = 0;
     public static final int OUTPUT_SLOT = 1;
     public static final int SLOT_COUNT = 2;
@@ -274,12 +275,34 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         setChanged();
     }
 
+    /**
+     * Drops both slots where the device stands, and empties them. The block calls this from {@code onRemove} when it is
+     * replaced by another block (broken, blown up, {@code /setblock ... destroy}). Each slot is emptied through the
+     * handler before its stack is dropped, rather than left to {@link Containers#dropItemStack} draining the stack it is
+     * handed: IItemHandler forbids changing a stack getStackInSlot returns (user's decision of 2026-10-07).
+     */
     public void drops() {
         if (level != null) {
             for (int i = 0; i < inventory.getSlots(); i++) {
-                Containers.dropItemStack(level, worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(),
-                        inventory.getStackInSlot(i));
+                ItemStack stack = inventory.getStackInSlot(i);
+                if (stack.isEmpty()) continue;
+                inventory.setStackInSlot(i, ItemStack.EMPTY);
+                Containers.dropItemStack(level, worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(), stack);
             }
+        }
+    }
+
+    /**
+     * {@link Clearable}, as vanilla containers are: {@code /setblock} and {@code /fill} without {@code destroy},
+     * {@code /clone}, and a structure placing a block with block entity data here empty the device before they replace
+     * it, so {@link #drops} then finds nothing. Without it {@code /clone ... move} doubled the contents - it saves this
+     * device to load into the target and then replaces this one, which dropped them here as well (measured on the real
+     * client 2026-10-07; the user's decision of the same day).
+     */
+    @Override
+    public void clearContent() {
+        for (int i = 0; i < inventory.getSlots(); i++) {
+            if (!inventory.getStackInSlot(i).isEmpty()) inventory.setStackInSlot(i, ItemStack.EMPTY);
         }
     }
 

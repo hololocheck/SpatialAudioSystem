@@ -21,6 +21,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.world.Clearable;
 import net.minecraft.world.Containers;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
@@ -34,7 +35,7 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 
-public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvider, OwnedDevice {
+public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvider, OwnedDevice, Clearable {
     /** Shares the loop signal's logger with {@link com.spatialaudiosystem.audio.AudioManager}. */
     private static final org.slf4j.Logger LOOP_SIGNAL =
             org.slf4j.LoggerFactory.getLogger("SAS-Loop");
@@ -940,16 +941,48 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
         }
     }
 
+    /**
+     * Drops every slot of the media slots and the playlist where the device stands, and empties them. The block calls
+     * this from {@code onRemove} when it is replaced by another block (broken, blown up, {@code /setblock ... destroy}).
+     *
+     * <p>Each slot is emptied through its handler before its stack is dropped, rather than left to
+     * {@link Containers#dropItemStack} draining the stack it is handed: IItemHandler forbids changing a stack
+     * getStackInSlot returns (user's decision of 2026-10-07, the shape ASC's cannon has). Emptying the single medium's
+     * slot while it plays, or the slot of the endless playlist entry, stops that sound there through the slot hooks,
+     * ahead of the block's own stop.
+     */
     public void drops() {
         if (level != null) {
             for (int i = 0; i < inventory.getSlots(); i++) {
-                Containers.dropItemStack(level, worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(),
-                        inventory.getStackInSlot(i));
+                dropSlot(inventory, i);
             }
             for (int i = 0; i < playlist.getSlots(); i++) {
-                Containers.dropItemStack(level, worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(),
-                        playlist.getStackInSlot(i));
+                dropSlot(playlist, i);
             }
+        }
+    }
+
+    private void dropSlot(ItemStackHandler slots, int slot) {
+        ItemStack stack = slots.getStackInSlot(slot);
+        if (stack.isEmpty()) return;
+        slots.setStackInSlot(slot, ItemStack.EMPTY);
+        Containers.dropItemStack(level, worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(), stack);
+    }
+
+    /**
+     * {@link Clearable}, as vanilla containers are: {@code /setblock} and {@code /fill} without {@code destroy},
+     * {@code /clone}, and a structure placing a block with block entity data here empty the device before they replace
+     * it, so {@link #drops} then finds nothing. Without it {@code /clone ... move} doubled the contents - it saves this
+     * device to load into the target and then replaces this one, which dropped them here as well (measured on the real
+     * client 2026-10-07; the user's decision of the same day).
+     */
+    @Override
+    public void clearContent() {
+        for (int i = 0; i < inventory.getSlots(); i++) {
+            if (!inventory.getStackInSlot(i).isEmpty()) inventory.setStackInSlot(i, ItemStack.EMPTY);
+        }
+        for (int i = 0; i < playlist.getSlots(); i++) {
+            if (!playlist.getStackInSlot(i).isEmpty()) playlist.setStackInSlot(i, ItemStack.EMPTY);
         }
     }
 
