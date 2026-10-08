@@ -112,4 +112,27 @@ class HandyStateTest {
         String music = "🎵".repeat(40);
         assertThat(HandyData.fit(music, 6)).as("never half a surrogate pair").isEqualTo("🎵");
     }
+
+    @Test
+    @DisplayName("SAS-HANDY-003: a name from NBT holding an unpaired surrogate never reaches a string declaration - fit "
+            + "leaves it out, returned early or cut, and so does sanitizeName, which the rename field starts from")
+    void unpairedSurrogatesAreLeftOut() {
+        // manta refuses a string with no UTF-8 form (a '?' travelled in its place until 2026-09-25): kept, one would
+        // make a push throw on the server thread, or Enter in the rename field throw on the client.
+        assertThat(HandyData.fit("a\ud800b", HandyData.NAME_BYTES)).as("returned early").isEqualTo("ab");
+        assertThat(HandyData.fit("\udc00" + "x".repeat(500), HandyData.FILE_BYTES)).as("cut")
+                .isEqualTo("x".repeat(HandyData.FILE_BYTES));
+        assertThat(TOOLS.admits("notice", HandyData.fit("\ud800 selected", HandyData.NOTICE_BYTES))).isTrue();
+        // A surrogate between a letter and a mark that recompose once it is gone: left out before NFC, a-grave + dot
+        // below (4 bytes) becomes dot-below a + grave (5 bytes), so fit measures what the codec will write.
+        String recomposing = new String(new int[] {0xE0, 0xD800, 0x323}, 0, 3);
+        assertThat(HandyData.fit("x".repeat(HandyData.NAME_BYTES - 4) + recomposing, HandyData.NAME_BYTES))
+                .isEqualTo("x".repeat(HandyData.NAME_BYTES - 4) + new String(new int[] {0x1EA1}, 0, 1));
+        assertThat(TOOLS.admits("notice", HandyData.fit("x".repeat(HandyData.NOTICE_BYTES - 4) + recomposing,
+                HandyData.NOTICE_BYTES))).as("at the edge of the declaration").isTrue();
+        String name = SoundDeviceRegistry.sanitizeName(" Dev\ud800ice\udc00 ");
+        assertThat(name).isEqualTo("Device");
+        assertThat(PlaybackDeviceData.schema().accepts("rename", name)).as("what the rename field sends").isTrue();
+        assertThat(PlaybackDeviceData.schema().accepts("rename", "Dev\ud800ice")).as("as NBT held it").isFalse();
+    }
 }

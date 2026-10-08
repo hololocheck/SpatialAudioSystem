@@ -114,14 +114,17 @@ public class SoundDeviceRegistry extends SavedData {
     }
 
     /**
-     * A name as the registry keeps it: trimmed, control characters dropped, at most
-     * {@link #MAX_NAME_CODE_POINTS} code points, and null when nothing is left.
+     * A name as the registry keeps it: trimmed, control characters and unpaired surrogates dropped, at most
+     * {@link #MAX_NAME_CODE_POINTS} code points, and null when nothing is left. A surrogate has no UTF-8 form and
+     * manta refuses a string holding one (a '?' travelled in its place until 2026-09-25); a name read back from NBT
+     * can hold one, and the device screen's rename field starts from it, so one kept here would make Enter throw.
      */
     @Nullable
     public static String sanitizeName(@Nullable String raw) {
         if (raw == null) return null;
         StringBuilder sb = new StringBuilder();
-        raw.codePoints().filter(cp -> cp >= 0x20 && cp != 0x7f).forEach(sb::appendCodePoint);
+        raw.codePoints().filter(cp -> cp >= 0x20 && cp != 0x7f
+                && (cp < Character.MIN_SURROGATE || cp > Character.MAX_SURROGATE)).forEach(sb::appendCodePoint);
         String s = sb.toString().trim();
         if (s.isEmpty()) return null;
         int[] cps = s.codePoints().toArray();
