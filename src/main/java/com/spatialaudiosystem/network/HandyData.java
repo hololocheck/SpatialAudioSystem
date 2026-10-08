@@ -173,10 +173,12 @@ public final class HandyData {
      * {@code s} as the codec carries it (NFC), cut at a code point so its UTF-8 fits {@code maxBytes}. A string
      * over its declaration makes the host refuse the whole value, and these are strings a player controls - a
      * device name, a medium's file name - so none of theirs can make a push throw. (The old list payload
-     * refused a file name past 128 characters on the way out, so an owner with such a medium got no list.)
+     * refused a file name past 128 characters on the way out, so an owner with such a medium got no list.) An
+     * unpaired surrogate is left out first: it has no UTF-8 form, manta refuses a string holding one (a '?'
+     * travelled in its place until 2026-09-25), and these names come from NBT, where one can live.
      */
     static String fit(String s, int maxBytes) {
-        String n = Normalizer.normalize(s, Normalizer.Form.NFC);
+        String n = Normalizer.normalize(withoutUnpairedSurrogates(s), Normalizer.Form.NFC);
         if (n.getBytes(StandardCharsets.UTF_8).length <= maxBytes) {
             return n;
         }
@@ -192,6 +194,14 @@ public final class HandyData {
             bytes += len;
             i += Character.charCount(cp);
         }
+        return out.toString();
+    }
+
+    /** {@code s} without its unpaired surrogates - the one thing in a Java string with no UTF-8 form. */
+    private static String withoutUnpairedSurrogates(String s) {
+        StringBuilder out = new StringBuilder(s.length());
+        s.codePoints().filter(cp -> cp < Character.MIN_SURROGATE || cp > Character.MAX_SURROGATE)
+                .forEach(out::appendCodePoint);
         return out.toString();
     }
 }
