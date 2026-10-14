@@ -87,6 +87,19 @@ class LayoutStrictValidationTest {
     }
 
     /**
+     * {@link #allLayoutsAreClean()} は Manta の icon 一覧が読めた時だけ icon を確かめ、読めなければ黙って飛ばす。
+     * これは「読めた」と言う側 — Orca・Xenophora の同名 test では 2026-10-14 まで一度も読めていなかった。
+     */
+    @Test
+    @DisplayName("icon 検査が届いていることの確認 — Manta の icon 一覧が読めて x と chevron-down を含む")
+    void theIconCatalogIsRead() {
+        var icons = iconCatalog();
+        // 一覧の id は名前空間なし。layout は manta:x と書く (一覧の x)。
+        assertTrue(icons != null && icons.contains("x") && icons.contains("chevron-down"),
+                "Manta の icon 一覧が読めない — allLayoutsAreClean の icon 検査は何も見ていない");
+    }
+
+    /**
      * layout dir を探す。cwd は consumer によって違う (TSU は project root、
      * SAS は {@code build/minecraft-junit}) ので、決め打ちの相対パスは使えない。
      * 見つからなければ test を green にせず fail させる — 「0 件だから合格」を防ぐ。
@@ -106,13 +119,25 @@ class LayoutStrictValidationTest {
         }
     }
 
-    /** @return icon ID 集合。取得できなければ null (= 未提供、検査しない)。 */
+    /**
+     * @return icon ID 集合。build.gradle が system property {@code spatialaudiosystem.mantaJar} で名指す jar
+     * (SAS が compile する読める Manta の jar) から読む。取得できなければ null — その時 allLayoutsAreClean は
+     * icon を 1 つも確かめず、{@link #theIconCatalogIsRead()} が赤になる。
+     *
+     * <p>classpath からは読まない: unit test の module 層では Manta の jar のリソースがこの class の
+     * getResourceAsStream に見えず、2026-10-14 に陽性対照が初回で赤になるまで毎回 null だった。
+     */
     private static java.util.Set<String> iconCatalog() {
-        try (var in = LayoutStrictValidationTest.class
-                .getResourceAsStream("/assets/manta/icons/icons.json")) {
-            if (in == null) return null;
-            JsonObject root = JsonParser.parseReader(
-                    new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonObject();
+        String jar = System.getProperty("spatialaudiosystem.mantaJar");
+        if (jar == null) return null;
+        try (var zip = new java.util.zip.ZipFile(jar)) {
+            var entry = zip.getEntry("assets/manta/icons/icons.json");
+            if (entry == null) return null;
+            JsonObject root;
+            try (var in = zip.getInputStream(entry)) {
+                root = JsonParser.parseReader(
+                        new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonObject();
+            }
             var out = new java.util.HashSet<String>();
             if (root.has("icons") && root.get("icons").isJsonArray()) {
                 for (var e : root.getAsJsonArray("icons")) {

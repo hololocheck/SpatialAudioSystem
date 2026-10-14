@@ -90,8 +90,15 @@ dependencies {
     testRuntimeOnly    'org.junit.platform:junit-platform-launcher:1.10.2'
 }
 
+// The layout gate reads Manta's icon catalogue from the jar itself: in the unit-test module layer the Manta jar's
+// resources are not visible to a test class's getResourceAsStream, and the icon check skipped every layout silently
+// until a positive control said so (2026-10-14, found in Orca's copy of the test).
+def mantaTestJar = file("../manta/build/libs/manta-${manta_version}.jar")
+
 test {
     useJUnitPlatform()
+    systemProperty 'spatialaudiosystem.mantaJar', mantaTestJar.absolutePath
+    inputs.file(mantaTestJar).optional().withPropertyName('mantaJar')
     testLogging {
         events 'passed', 'skipped', 'failed'
         exceptionFormat 'full'
