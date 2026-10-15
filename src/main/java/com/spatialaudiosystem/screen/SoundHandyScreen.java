@@ -702,6 +702,16 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
         return super.onElementWheel(classes, key, mouseX, mouseY, scrollY);
     }
 
+    /** The list's thumb, grabbed and dragged (Manta 2.87.0's dragThumb, R4.19.5). */
+    @Override
+    public boolean onElementDrag(String[] classes, String key, int mouseX, int mouseY,
+                                 int elementX, int elementY, int elementW, int elementH, boolean pressed) {
+        if ("hd-thumb-drag".equals(key)) {
+            return pages.is(Page.LIST) && listScroll.dragThumb(mouseY, pressed);
+        }
+        return super.onElementDrag(classes, key, mouseX, mouseY, elementX, elementY, elementW, elementH, pressed);
+    }
+
     @Override
     protected void handleMainClick(String[] classes, int mouseX, int mouseY, int button) {
         if (devSlidingOut) return;   // the page the player just left must not act on the way out

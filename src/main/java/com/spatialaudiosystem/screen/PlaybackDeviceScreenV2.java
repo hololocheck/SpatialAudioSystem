@@ -630,6 +630,19 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
         return trimToFit(name, 148);
     }
 
+    /** The two lists' thumbs, grabbed and dragged (Manta 2.87.0's dragThumb, R4.19.5). */
+    @Override
+    public boolean onElementDrag(String[] classes, String key, int mouseX, int mouseY,
+                                 int elementX, int elementY, int elementW, int elementH, boolean pressed) {
+        if ("pb-sched-thumb-drag".equals(key)) {
+            return scheduleScroll.dragThumb(mouseY, pressed);
+        }
+        if ("pb-rs-thumb-drag".equals(key)) {
+            return redstoneScroll.dragThumb(mouseY, pressed);
+        }
+        return super.onElementDrag(classes, key, mouseX, mouseY, elementX, elementY, elementW, elementH, pressed);
+    }
+
     @Override
     public boolean onElementWheel(String[] classes, String key, int mouseX, int mouseY, double scrollY) {
         // The dialog roots carry the list wheel: a row's own value cells are tried first by the

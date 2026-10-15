@@ -420,6 +420,7 @@
           "borderRadius": 2,
           "visibleKey": "pb-rs-scrollbar",
           "dynamicY": "pb-rs-thumb-y",
+          "dragKey": "pb-rs-thumb-drag",
           "transitionKey": "toggle-knob"
         }
       ]

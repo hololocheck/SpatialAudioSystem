@@ -14,7 +14,7 @@
       {"bg":"#555","color":"","borderColor":"","borderWidth":0,"borderRadius":3,"fontWeight":"","isSlot":false,"text":"","children":[],"tag":"div","classes":["hd-row-dot"],"x":198,"y":40,"w":6,"h":6,"bgKey":"hd-row-dot"}
     ],"tag":"div","classes":["hd-row"],"x":6,"y":30,"w":204,"h":24,"bgKey":"hd-row-bg","borderColorKey":"hd-row-border","hoverBg":"rgba(79,195,247,0.12)","hoverBorderColor":"#4fc3f7","clickable":true}},
   {"bg":"rgba(255,255,255,0.08)","color":"","borderColor":"","borderWidth":0,"borderRadius":2,"fontWeight":"","isSlot":false,"text":"","children":[],"tag":"div","classes":["hd-scrollbar","scrollbar-track"],"x":212,"y":30,"w":4,"h":260,"visibleKey":"hd-scrollbar"},
-  {"bg":"#4fc3f7","color":"","borderColor":"","borderWidth":0,"borderRadius":2,"fontWeight":"","isSlot":false,"text":"","children":[],"tag":"div","classes":["hd-thumb","scrollbar-thumb"],"x":212,"y":30,"w":4,"h":30,"visibleKey":"hd-scrollbar","dynamicY":"hd-thumb-y","transitionKey":"toggle-knob"}
+  {"bg":"#4fc3f7","color":"","borderColor":"","borderWidth":0,"borderRadius":2,"fontWeight":"","isSlot":false,"text":"","children":[],"tag":"div","classes":["hd-thumb","scrollbar-thumb"],"x":212,"y":30,"w":4,"h":30,"visibleKey":"hd-scrollbar","dynamicY":"hd-thumb-y","dragKey":"hd-thumb-drag","transitionKey":"toggle-knob"}
 ],"tag":"div","classes":["hd-tab-list"],"x":0,"y":26,"w":220,"h":306,"visibleKey":"hd-tab-list","wheelKey":"hd-list-scroll"},
 
 {"bg":"","color":"","borderColor":"","borderWidth":0,"borderRadius":0,"fontWeight":"","isSlot":false,"text":"","children":[

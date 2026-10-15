@@ -373,6 +373,7 @@
           "borderRadius": 2,
           "visibleKey": "pb-sched-scrollbar",
           "dynamicY": "pb-sched-thumb-y",
+          "dragKey": "pb-sched-thumb-drag",
           "transitionKey": "toggle-knob"
         }
       ]
