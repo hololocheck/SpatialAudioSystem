@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.manta.api.wiki.WikiLiveScreens;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.HashSet;
@@ -57,5 +58,48 @@ class SasScreenCatalogueTest {
             assertTrue(e.states().length > 0, e.id() + " has no state to open it in");
             assertEquals(e.states().length, Set.of(e.states()).size(), e.id() + " repeats a state");
         }
+    }
+
+    /**
+     * The sweep-only states (user, 2026-10-21) are the sweep's and never the wiki's: each is a state the driver walks, none
+     * is in {@link SasWikiLiveCapture#wikiRows()} - the rows the capture loop and the live registration both read - and,
+     * registered as the client registers them, Manta's own resolver draws none of their pictures while it draws every
+     * other state of a photographed screen (the control that the url asked is one the resolver answers).
+     */
+    @Test
+    void theSweepOnlyStatesAreWalkedByTheSweepAndNeverPhotographedOrDrawn() {
+        SasWikiLiveCapture.registerLive();
+        int sweepOnly = 0;
+        int drawn = 0;
+        for (SasWikiLiveCapture.Entry e : SasWikiLiveCapture.table()) {
+            List<String> states = List.of(e.states());
+            for (String s : e.sweepOnly()) {
+                sweepOnly++;
+                assertTrue(states.contains(s), e.id() + "/" + s + " is not a state, so the sweep never opens it");
+                assertFalse(WikiLiveScreens.resolves(picture(e.id(), s)), e.id() + "/" + s + " is drawn by the wiki");
+            }
+            for (String s : e.wikiStates()) {
+                assertFalse(e.sweepOnly().contains(s), e.id() + "/" + s + " is the sweep's, not the wiki's");
+                if (e.photographed()) {
+                    drawn++;
+                    assertTrue(WikiLiveScreens.resolves(picture(e.id(), s)), e.id() + "/" + s + " is not drawn live");
+                }
+            }
+            assertEquals(states.size(), e.wikiStates().length + e.sweepOnly().size(),
+                    e.id() + ": every state is the wiki's or the sweep's, exactly once");
+        }
+        assertTrue(sweepOnly > 0 && drawn > 0, "nothing was judged (" + sweepOnly + " sweep-only, " + drawn + " drawn)");
+        for (WikiLiveScreens.Row row : SasWikiLiveCapture.wikiRows()) {
+            SasWikiLiveCapture.Entry e = SasWikiLiveCapture.table().stream()
+                    .filter(t -> t.id().equals(row.id())).findFirst().orElseThrow();
+            for (String s : row.states()) {
+                assertFalse(e.sweepOnly().contains(s), row.id() + "/" + s + " would be photographed");
+            }
+        }
+    }
+
+    /** A page's picture of {@code id} in {@code state}: {@code <id>__<state>__<lang>.png}, the form Manta resolves. */
+    private static String picture(String id, String state) {
+        return "bws:spatialaudiosystem:wiki/screens/" + id + "__" + state + "__ja_jp.png";
     }
 }

@@ -291,19 +291,33 @@ public class PlaybackDeviceScreenV2 extends JsonLayoutScreen<PlaybackDeviceMenu>
     /**
      * Wiki capture: force the shot to the main view, to the armed, open schedule popup, or to the redstone dialog with the
      * output on and one rule - a lamp lit while the device plays - so the dialog shows a rule before the page adds one.
+     * "schedule-long" and "redstone-long" are BelugaAOS's UI sweep's alone (SasWikiLiveCapture's sweep-only states): the
+     * same popups holding more rows than they show, so each list's scrollbar thumb is up to be dragged.
      */
     public void wikiApplyState(String state) {
-        boolean sched = "schedule".equals(state);
+        boolean sched = "schedule".equals(state) || "schedule-long".equals(state);
         schedulePopup.setOpen(sched);
         scheduleModeOn = sched;
         if (sched && !be().isScheduleMode()) be().toggleScheduleMode();   // dummy client BE: no packets
         scheduleOpenedAtNanos = 0L;   // no open animation, and slot items draw immediately
-        if ("redstone".equals(state)) {
+        if ("schedule-long".equals(state)) {
+            for (int i = be().getEntryCount(); i < LONG_ROWS; i++) {
+                be().addEntry();
+                be().getPlaylist().setStackInSlot(i, sampleMedium("entry_" + (i + 1) + ".ogg"));
+            }
+        }
+        if ("redstone".equals(state) || "redstone-long".equals(state)) {
             redstonePopup.setOpen(true);
             be().setRedstoneEnabled(true);
             if (be().getRedstoneRules().isEmpty()) be().addRedstoneRule();
         }
+        if ("redstone-long".equals(state)) {
+            for (int i = be().getRedstoneRules().size(); i < LONG_ROWS; i++) be().addRedstoneRule();
+        }
     }
+
+    /** The rows a sweep-only state fills a list with: twice what the list shows (within MAX_ENTRIES and MAX_RULES). */
+    private static final int LONG_ROWS = 2 * VISIBLE_ROWS;
 
     @Override
     protected String layoutJson() { return SasLayouts.load("layouts/playback-device.json"); }

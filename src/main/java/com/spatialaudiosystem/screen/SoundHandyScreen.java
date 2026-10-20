@@ -192,11 +192,20 @@ public class SoundHandyScreen extends JsonLayoutPlainScreen implements HudCoexis
 
     /**
      * Puts the screen on a page by name for the sweep, without the page transition: "list" (where it opens) or
-     * "settings". The device page needs a selected device and is not offered.
+     * "settings". The device page needs a selected device and is not offered. "list-long" is the sweep's alone
+     * (SasWikiLiveCapture's sweep-only states): the list holding twice the devices it shows, so its scrollbar thumb is up
+     * to be dragged.
      */
     public void wikiApplyState(String state) {
         if ("settings".equals(state)) {
             pages.setCurrent(Page.SETTINGS);
+        }
+        if ("list-long".equals(state) && wikiRows != null) {
+            for (int i = wikiRows.size(); i < 2 * VISIBLE_ROWS; i++) {
+                wikiRows.add(new HandyDeviceRow(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD,
+                        new net.minecraft.core.BlockPos(100 + 4 * i, 64, -20)), (i + 1) + "番線 案内放送",
+                        true, false, true, false, "announce_next.mp3", "mp3"));
+            }
         }
     }
 

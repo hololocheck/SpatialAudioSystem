@@ -42,22 +42,46 @@ public final class SasWikiLiveCapture {
      * <p>BelugaAOS reads {@link #table()} by reflection and SHOWS these screens on a world of its own run for its UI
      * sweep; the showing, and the containment it needs, live there and never here — the device factories build with
      * a throwaway block entity, and a container screen's menu carries containerId 0.
+     *
+     * <p>{@code sweepOnly}: the states only that sweep opens, never photographed nor drawn by the wiki (user, 2026-10-21)
+     * - a list filled past its viewport, so its scrollbar thumb is up for the sweep to drag (BelugaAOS v57 drags every
+     * thumb it can see; a list that fits hides its thumb, and that list's drag was then never checked).
      */
     record Entry(String id, Supplier<Screen> factory, BiConsumer<Screen, String> apply,
-                 boolean applyBeforeInit, boolean photographed, String... states) {}
+                 boolean applyBeforeInit, boolean photographed, Set<String> sweepOnly, String... states) {
+
+        /** The states the wiki photographs and draws: every state but the sweep's own. */
+        String[] wikiStates() {
+            return java.util.Arrays.stream(states).filter(s -> !sweepOnly.contains(s)).toArray(String[]::new);
+        }
+    }
 
     /** The catalogue. Order is the capture order, which is also the order a driver walks. */
     static List<Entry> table() {
         return List.of(
-            new Entry("memory-device", RecordingDeviceScreenV2::wikiCreate, NO_STATE, true, true, "main"),
+            new Entry("memory-device", RecordingDeviceScreenV2::wikiCreate, NO_STATE, true, true, Set.of(), "main"),
             // 改善1 (2026-10-07): the redstone dialog has a page of its own, and the sound handy's page shows the handy
             // operated on devices of its own (SoundHandyScreen.wikiCreate).
             new Entry("playback-device", PlaybackDeviceScreenV2::wikiCreate,
-                    (s, st) -> ((PlaybackDeviceScreenV2) s).wikiApplyState(st), true, true, "main", "schedule",
-                    "redstone"),
+                    (s, st) -> ((PlaybackDeviceScreenV2) s).wikiApplyState(st), true, true,
+                    Set.of("schedule-long", "redstone-long"), "main", "schedule", "redstone", "schedule-long",
+                    "redstone-long"),
             new Entry("sound-handy", SoundHandyScreen::wikiCreate,
-                    (s, st) -> ((SoundHandyScreen) s).wikiApplyState(st), false, true, "list", "settings")
+                    (s, st) -> ((SoundHandyScreen) s).wikiApplyState(st), false, true, Set.of("list-long"), "list",
+                    "settings", "list-long")
         );
+    }
+
+    /** The table as the wiki reads it: the photographed screens, each in its {@link Entry#wikiStates()}. */
+    static List<com.manta.api.wiki.WikiLiveScreens.Row> wikiRows() {
+        List<com.manta.api.wiki.WikiLiveScreens.Row> rows = new java.util.ArrayList<>();
+        for (Entry e : table()) {
+            if (e.photographed()) {
+                rows.add(new com.manta.api.wiki.WikiLiveScreens.Row(e.id(), e.factory(), e.apply(),
+                        e.applyBeforeInit(), e.wikiStates()));
+            }
+        }
+        return rows;
     }
 
     /**
@@ -66,14 +90,7 @@ public final class SasWikiLiveCapture {
      * containment (no packet, no slot action on the player's own menu, no screen change). Once, at client setup.
      */
     public static void registerLive() {
-        List<com.manta.api.wiki.WikiLiveScreens.Row> rows = new java.util.ArrayList<>();
-        for (Entry e : table()) {
-            if (e.photographed()) {
-                rows.add(new com.manta.api.wiki.WikiLiveScreens.Row(e.id(), e.factory(), e.apply(),
-                        e.applyBeforeInit(), e.states()));
-            }
-        }
-        com.manta.api.wiki.WikiLiveScreens.register(com.spatialaudiosystem.SpatialAudioSystem.MOD_ID, rows);
+        com.manta.api.wiki.WikiLiveScreens.register(com.spatialaudiosystem.SpatialAudioSystem.MOD_ID, wikiRows());
     }
 
     public static void clearCache() { done.clear(); }
@@ -100,11 +117,9 @@ public final class SasWikiLiveCapture {
                 } catch (Throwable t) {
                     LOGGER.warn("[SasWikiLive] language inject failed for {}: {}", lang, t.toString());
                 }
-                for (Entry e : table()) {
-                    if (e.photographed()) {
-                        n += captureStates(e.id(), lang, savePng, e.factory(), e.apply(), e.applyBeforeInit(),
-                                e.states());
-                    }
+                for (com.manta.api.wiki.WikiLiveScreens.Row r : wikiRows()) {
+                    n += captureStates(r.id(), lang, savePng, r.factory(), r.apply(), r.applyBeforeInit(),
+                            r.states().toArray(String[]::new));
                 }
             }
         } finally {
