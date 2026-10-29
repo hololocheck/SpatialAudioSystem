@@ -37,5 +37,7 @@ create-*.jar
 # Root-level screenshots (already in screenshots/)
 /2026-*.png
 
-# Personal deploy helper (machine-specific path)
-/scripts/
+# Personal deploy helper (machine-specific path). The one exception is the negative controls build.gradle's
+# mantaConsumerGates names, which must travel with it (a directory rule would not let it be re-included).
+/scripts/*
+!/scripts/manta_consumer_gates.mutation.py

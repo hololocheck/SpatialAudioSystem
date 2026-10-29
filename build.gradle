@@ -197,6 +197,98 @@ tasks.register('mantaWikiLangGate') {
 }
 tasks.named('check') { dependsOn 'mantaWikiLangGate' }
 
+// Manta's consumer-reading gates, asked about THIS tree before it ships (2026-10-29). Xenophora 0.10.0 and 0.13.0 passed
+// their own check and turned Manta's next check red: keyed nodes the slot vocabulary could not resolve, and shapes
+// ConsumerReimplementationGateTest refuses. Manta's check reads this tree the same way, so Manta's own entry points judge
+// it here - the slot vocabulary gate's --consumer mode and ConsumerReimplementationRules.java - taken from Manta's
+// COMMITTED tree: `git archive` of origin/master in the Manta repository at mantaRoot (-PmantaGateRef names another ref,
+// e.g. a Manta branch under development), never that checkout's working tree, which can sit behind origin and carry
+// another session's edits. Manta's RECORDS of the consumers (parity captures, the slot vocabulary ledger and its
+// baseline) are not asked: every legitimate layout or key change moves them, and only Manta re-freezes them - parity
+// with a real client. Xenophora's task; the negative controls are scripts/manta_consumer_gates.mutation.py.
+// mantaRoot is the Manta checkout beside this one, or -PmantaRoot (the copies that script writes under build/ pass it).
+// Only this task reads it; the paths above name ../manta themselves. This build spells its mod id as a literal
+// (mods { spatialaudiosystem }), so it is named here for the task to find this tree in Manta's notes/consumers.json.
+def mantaRoot = file(findProperty('mantaRoot') ?: '../manta')
+ext.mod_id = 'spatialaudiosystem'
+def mantaGateRef = findProperty('mantaGateRef') ?: 'origin/master'
+def mantaGatePaths = ['scripts/manta6_slot_vocabulary_gate.py', 'scripts/manta6_slot_vocabulary.py',
+                      'scripts/manta6_workspace.py', 'notes/consumers.json', 'src/main/java/com/manta/api',
+                      'src/test/java/com/manta/api/screen/ConsumerReimplementationRules.java']
+
+tasks.register('mantaConsumerGates') {
+    group = 'verification'
+    description = "Manta's consumer-reading gates (slot vocabulary resolution, reimplementation rules) over this tree"
+    def javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    doLast {
+        def capture = { List<String> cmd ->
+            def pb = new ProcessBuilder(cmd).directory(projectDir).redirectErrorStream(true)
+            pb.environment().put('PYTHONDONTWRITEBYTECODE', '1')
+            pb.environment().put('PYTHONIOENCODING', 'utf-8')
+            def proc = pb.start()
+            def out = new String(proc.inputStream.readAllBytes(), 'UTF-8')
+            [proc.waitFor(), out]
+        }
+        def (revCode, rev) = capture(['git', '-C', mantaRoot.absolutePath, 'rev-parse', '--verify', "${mantaGateRef}^{commit}".toString()])
+        if (revCode != 0) {
+            throw new GradleException("mantaConsumerGates: ${mantaGateRef} does not resolve in ${mantaRoot} (${rev.trim()}). "
+                    + "Refusing rather than reporting a pass it did not measure.")
+        }
+        def sha = rev.trim()
+        // Fresh per run and removed after it: nothing judged here is a copy an earlier run left behind.
+        def work = layout.buildDirectory.dir("tmp/mantaConsumerGates/${sha.take(12)}-${System.nanoTime()}").get().asFile
+        try {
+            work.mkdirs()
+            def zip = new File(work, 'manta.zip')
+            def (archCode, arch) = capture(['git', '-C', mantaRoot.absolutePath, 'archive', '--format=zip', '-o', zip.absolutePath, sha]
+                    + mantaGatePaths)
+            if (archCode != 0) {
+                throw new GradleException("mantaConsumerGates: Manta ${mantaGateRef} (${sha.take(12)}) lacks the consumer gates' "
+                        + "entry points - ${arch.trim()}. Refusing rather than reporting a pass it did not measure.")
+            }
+            def manta = new File(work, 'manta')
+            project.copy { from zipTree(zip); into manta }
+            def entry = new groovy.json.JsonSlurper().parse(new File(manta, 'notes/consumers.json')).consumers
+                    .find { it.modid == project.mod_id }
+            if (entry == null) {
+                throw new GradleException("mantaConsumerGates: ${project.mod_id} is not in Manta's notes/consumers.json at "
+                        + "${sha.take(12)}, so no Manta gate reads this tree - there is nothing to ask them")
+            }
+            // Each gate as [name, command, the line that says it judged THIS tree]: a pass is exit 0 with that line and its
+            // PASS. Exit 1 with FAIL is a finding, 2 a tree the gate could not read; anything else is no verdict at all.
+            def gates = [
+                ['slot vocabulary', ['python', new File(manta, 'scripts/manta6_slot_vocabulary_gate.py').absolutePath,
+                                     '--consumer', projectDir.absolutePath, '--modid', project.mod_id],
+                 "one consumer's textKey nodes vs what its sources push: ${project.mod_id} at"],
+                ['reimplementation rules', [javaLauncher.get().executablePath.asFile.absolutePath,
+                                            new File(manta, 'src/test/java/com/manta/api/screen/ConsumerReimplementationRules.java').absolutePath,
+                                            '--consumer', projectDir.absolutePath, '--folder', entry.folder],
+                 "one consumer's sources vs the parts Manta owns: ${entry.folder} at"]]
+            def failed = []
+            gates.each { name, cmd, judged ->
+                def (code, out) = capture(cmd)
+                print out
+                def verdict = code == 0 && out.contains(judged.toString()) && out.contains('RESULT: PASS') ? 'PASS'
+                        : code == 1 && out.contains('RESULT: FAIL') ? 'FAIL'
+                        : code == 2 && out.contains('COULD NOT TELL') ? 'COULD NOT TELL'
+                        : "NO VERDICT (exit ${code})"
+                if (verdict != 'PASS') {
+                    failed << "${name}: ${verdict}"
+                }
+            }
+            if (failed) {
+                throw new GradleException("mantaConsumerGates: Manta's consumer-reading gates at ${mantaGateRef} (${sha.take(12)}) "
+                        + "do not pass this tree - ${failed.join('; ')}. Manta's next check reads this tree and fails on the same "
+                        + "findings; fix them here (a false finding: a waiver in Manta) before this ships.")
+            }
+            logger.lifecycle("mantaConsumerGates: PASS - slot vocabulary and reimplementation rules at ${mantaGateRef} (${sha.take(12)})")
+        } finally {
+            project.delete(work)
+        }
+    }
+}
+tasks.named('check') { dependsOn 'mantaConsumerGates' }
+
 // Expand ${manta_version} in mods.toml from gradle.properties, keeping the required
 // range in lockstep with the embedded Manta. ${mod_version} comes from the build's own
 // version so the declared version cannot drift from the jar's filename — a hardcoded
