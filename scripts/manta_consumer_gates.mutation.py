@@ -13,6 +13,13 @@ in that clean run.
                   fails on - and so must this tree's check (the user, 2026-10-29). Only where Manta waives a file here
   no-layouts      a tree with no layouts directory: COULD NOT TELL, never a pass
   old-manta       Manta's last commit before the entry points (2.91.1's C2 receipt): refused
+  tree-<gate>     a change ConsumerTreeGates' gate of that name fails, and no other gate: a method hit-testing against a
+                  layer origin with no scale, a vanilla drawString, a raster width beside MantaText.drawInBatch, a screen
+                  scaling its panel before super.render, a dropdownDown call, a page root keyed popup-slide, the hand
+                  copy of the glyph set one glyph short, a CODING_GUIDELINES.md naming a Manta class no keep rule covers
+  tree-shadow     a label of the file FontMix's record of shadowed labels names here drawn without its shadow (the
+                  user, 2026-10-29: the record is asked too). Only where Manta records one here
+  before-tree     Manta's last commit before ConsumerTreeGates: refused
 
 Xenophora's copy of this harness replays two shapes from that repo's history. This repo shipped neither, so its changes
 are made up: each is the smallest that should give its gate's verdict, and the clean run shows it is not there already.
@@ -35,6 +42,9 @@ MANTA_FROM_ROOT = ("..", "manta")
 SOURCE_SETS = {"main": "src/main/java/com/spatialaudiosystem"}
 # (file, rule) of a waiver Manta's ConsumerReimplementationRules keeps for this repo; None where it keeps none.
 WAIVED = ("src/main/java/com/spatialaudiosystem/audio/SpatialGain.java", "camera-relative AABB spanning two BlockPos")
+# (file, one shadowed draw in it) from the record of shadowed labels Manta's ConsumerTreeGates keeps for this repo; None
+# where it keeps none.
+SHADOWED = None
 # ---
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -42,16 +52,23 @@ MANTA = os.path.abspath(os.path.join(ROOT, *MANTA_FROM_ROOT))
 WORK = os.path.join(ROOT, "build", "mutation", "consumer-gates")
 GRADLEW = "gradlew.bat" if os.name == "nt" else "gradlew"
 COPIED = ("src", "gradle", "build.gradle", "settings.gradle", "gradle.properties", GRADLEW)
+# The governance documents ConsumerTreeGates reads at the root, copied where this repo has them.
+OPTIONAL = ("CODING_GUIDELINES.md", "PERMISSION_MATRIX.md")
 LAYOUTS = f"src/main/resources/assets/{MODID}/layouts"
 BEFORE_THE_ENTRY_POINTS = "18c66a73c63e"
+BEFORE_THE_TREE_GATES = "5c8226d092b1"
 UNPUSHED = "cgate-mutant-unpushed-key"
 BY_HAND = "CgateMutantSpan"
 BY_HAND_RULE = "camera-relative AABB spanning two BlockPos"
 
 SLOT_FAIL = "slot vocabulary: FAIL"
 RULES_FAIL = "reimplementation rules: FAIL"
+TREE_GATES = ("hit arithmetic", "vanilla font", "font mix", "outside panel transform", "dropdown motion",
+              "control glyph copy", "governance linkability")
+TREE_FAIL = {g: f"  {g}: FAIL" for g in TREE_GATES}
 CLEAN = ("RESULT: PASS - every textKey node reaches a key or a key pattern this consumer pushes",
-         "RESULT: PASS - no finding but a waived one", "mantaConsumerGates: PASS")
+         "RESULT: PASS - no finding but a waived one", "RESULT: PASS - seven gates, no finding",
+         "mantaConsumerGates: PASS")
 
 
 def first_keyed(node):
@@ -107,6 +124,70 @@ def by_hand(source_dir):
     return add
 
 
+def add_class(source_dir, name, body):
+    """A change adding class `name` - `body` under its package line - to the source set at source_dir."""
+    package = source_dir.split("/java/", 1)[1].replace("/", ".")
+
+    def add(tree):
+        folder = os.path.join(tree, *source_dir.split("/"))
+        path = os.path.join(folder, name + ".java")
+        if not os.path.isdir(folder) or os.path.exists(path):
+            raise SystemExit(f"REFUSED: {source_dir} is no package directory of the copy, or {name}.java is already "
+                             f"there - the control must add a class of its own to a real source set")
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(f"package {package};\n\n{body}")
+    return add
+
+
+def popup_slide(tree):
+    """The first layout's root (files by path) keyed popup-slide, the overlay dropdowns' old key."""
+    layouts = os.path.join(tree, *LAYOUTS.split("/"))
+    names = sorted(os.path.relpath(os.path.join(base, n), layouts).replace(os.sep, "/")
+                   for base, _dirs, files in os.walk(layouts) for n in files if n.endswith(".json"))
+    if not names:
+        raise SystemExit("REFUSED: no layout here - a control with no page to key is not a control")
+    path = os.path.join(layouts, *names[0].split("/"))
+    with open(path, encoding="utf-8") as fh:
+        doc = json.load(fh)
+    if not isinstance(doc, dict):
+        raise SystemExit(f"REFUSED: {names[0]} holds no object - the control keys a page's root")
+    print(f"  tree-dropdown-layout: {names[0]}: root animationKey {doc.get('animationKey')!r} -> 'popup-slide'", flush=True)
+    doc["animationKey"] = "popup-slide"
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=2)
+
+
+def short_glyph(tree):
+    """This repo's hand copy of ControlGlyphGateTest with the first glyph of its CONTROL_GLYPHS removed."""
+    tests = os.path.join(tree, "src", "test", "java")
+    copies = sorted(os.path.join(base, n) for base, _dirs, files in os.walk(tests) for n in files
+                    if n == "ControlGlyphGateTest.java")
+    if len(copies) != 1:
+        raise SystemExit(f"REFUSED: {len(copies)} hand copies of ControlGlyphGateTest - the control shortens one")
+    with open(copies[0], encoding="utf-8", newline="") as fh:
+        text = fh.read()
+    start = text.find("CONTROL_GLYPHS = Set.of(")
+    first = text.find('"', start) if start >= 0 else -1
+    close = text.find('"', first + 1) if first >= 0 else -1
+    if close < 0 or text.find(");", start) < close:
+        raise SystemExit("REFUSED: no glyph literal in the copy's CONTROL_GLYPHS - nothing to remove")
+    cut = close + 1 + (1 if text[close + 1] == "," else 0)
+    print(f"  tree-glyph-copy: {text[first:close + 1]} removed from the hand copy", flush=True)
+    with open(copies[0], "w", encoding="utf-8", newline="") as fh:
+        fh.write(text[:first] + text[cut:])
+
+
+def govern(tree):
+    """A CODING_GUIDELINES.md (added to, where this repo has one) naming ControlGlyphs, a Manta class no keep rule covers."""
+    with open(os.path.join(tree, "CODING_GUIDELINES.md"), "a", encoding="utf-8", newline="\n") as fh:
+        fh.write("\nControlGlyphs\n")
+
+
+def others(gate):
+    """Every gate's FAIL needle but `gate`'s: a tree mutant must fail its own gate and no other."""
+    return [SLOT_FAIL, RULES_FAIL] + [TREE_FAIL[g] for g in TREE_GATES if g != gate]
+
+
 # name, change (a callable, a removed file / directory, (path, old, new), or None), extra gradle args, needles it must
 # print, needles it must not.
 MUTANTS = [("unpushed-node", unpush, [], [SLOT_FAIL, f"textKey={UNPUSHED}"], [RULES_FAIL])]
@@ -115,9 +196,46 @@ MUTANTS += [(f"by-hand-{name}", by_hand(source_dir), [], [RULES_FAIL, f"{source_
 if WAIVED:
     MUTANTS.append(("waived-gone", WAIVED[0], [],
                     [RULES_FAIL, "1 waiver(s) matching nothing", f"{WAIVED[0]} / {WAIVED[1]}"], [SLOT_FAIL]))
-MUTANTS += [("no-layouts", LAYOUTS, [], ["slot vocabulary: COULD NOT TELL", "COULD NOT TELL - no layouts"], [RULES_FAIL]),
+MUTANTS += [("no-layouts", LAYOUTS, [], ["slot vocabulary: COULD NOT TELL", "COULD NOT TELL - no layouts",
+                                          "  dropdown motion: COULD NOT TELL - no layouts under"], [RULES_FAIL]),
             ("old-manta", None, [f"-PmantaGateRef={BEFORE_THE_ENTRY_POINTS}"], ["lacks the consumer gates' entry points"],
              [])]
+MAIN = next(iter(SOURCE_SETS.values()))
+MUTANTS += [
+    ("tree-hit", add_class(MAIN, "CgateMutantHit", "final class CgateMutantHit {\n    boolean over(double mx) {\n"
+                                                   "        return mx >= dialogX() + 10;\n    }\n\n    int dialogX() {\n"
+                                                   "        return 0;\n    }\n}\n"),
+     [], [TREE_FAIL["hit arithmetic"], f"{MAIN}/CgateMutantHit.java:"], others("hit arithmetic")),
+    ("tree-vanilla-font", add_class(MAIN, "CgateMutantFont", "final class CgateMutantFont {\n"
+                                                             "    void d(GuiGraphics g, Font font) {\n"
+                                                             "        g.drawString(font, \"x\", 0, 0, 0xFFFFFF);\n    }\n}\n"),
+     [], [TREE_FAIL["vanilla font"], f"{MAIN[len('src/'):]}/CgateMutantFont.java:"], others("vanilla font")),
+    ("tree-font-mix", add_class(MAIN, "CgateMutantMix", "final class CgateMutantMix {\n    void d() {\n"
+                                                        "        int w = com.manta.api.text.MantaText.uiWidth(font, s);\n"
+                                                        "        com.manta.api.text.MantaText.drawInBatch(font, s, -w / 2f, 0, 0,"
+                                                        " false, m, b, mode, 0);\n    }\n}\n"),
+     [], [TREE_FAIL["font mix"], f"{MAIN}/CgateMutantMix.java:"], others("font mix")),
+    ("tree-panel", add_class(MAIN, "CgateMutantPanel", "final class CgateMutantPanel extends "
+                                                       "com.manta.api.screen.JsonLayoutPlainScreen {\n"
+                                                       "    public void render(GuiGraphics g, int mx, int my, float t) {\n"
+                                                       "        g.pose().scale(0.5f, 0.5f, 1f);\n"
+                                                       "        super.render(g, mx, my, t);\n    }\n}\n"),
+     [], [TREE_FAIL["outside panel transform"], f"{MAIN}/CgateMutantPanel.java:"], others("outside panel transform")),
+    ("tree-dropdown-java", add_class(MAIN, "CgateMutantDropdown", "final class CgateMutantDropdown {\n"
+                                                                  "    Object a = com.manta.api.anim.Animation.dropdownDown(280, 136);\n}\n"),
+     [], [TREE_FAIL["dropdown motion"], f"{MAIN}/CgateMutantDropdown.java:", "calls the preset dropdownDown("],
+     others("dropdown motion")),
+    ("tree-dropdown-layout", popup_slide, [], [TREE_FAIL["dropdown motion"], "animationKey popup-slide"],
+     others("dropdown motion")),
+    ("tree-glyph-copy", short_glyph, [], [TREE_FAIL["control glyph copy"], ": missing ["], others("control glyph copy")),
+    ("tree-governance", govern, [], [TREE_FAIL["governance linkability"], "ControlGlyphs (com.manta.design.ControlGlyphs)"],
+     others("governance linkability")),
+]
+if SHADOWED:
+    MUTANTS.append(("tree-shadow", (SHADOWED[0], SHADOWED[1], SHADOWED[1].replace(", true);", ", false);")), [],
+                    [TREE_FAIL["font mix"], f"{SHADOWED[0]}: recorded"], others("font mix")))
+MUTANTS.append(("before-tree", None, [f"-PmantaGateRef={BEFORE_THE_TREE_GATES}"],
+                ["lacks the consumer gates' entry points"], []))
 
 
 def copy_tree(name):
@@ -125,7 +243,7 @@ def copy_tree(name):
     if os.path.exists(target):
         shutil.rmtree(target)
     os.makedirs(target)
-    for item in COPIED:
+    for item in COPIED + tuple(o for o in OPTIONAL if os.path.exists(os.path.join(ROOT, o))):
         source = os.path.join(ROOT, item)
         if os.path.isdir(source):
             shutil.copytree(source, os.path.join(target, item))
@@ -201,6 +319,9 @@ if (verdict(1, "x slot vocabulary: FAIL y", ["slot vocabulary: FAIL"], []) != "R
 
 
 def main(args):
+    # A tail printed for a reader must not end the run that holds the remaining verdicts: the console may be cp932, and
+    # gradle's output, read here as UTF-8, can carry U+FFFD (measured 2026-10-29 - the print raised and the rest never ran).
+    sys.stdout.reconfigure(errors="backslashreplace")
     ref = None
     if "--ref" in args:
         at = args.index("--ref")
