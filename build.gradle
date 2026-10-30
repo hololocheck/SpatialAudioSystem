@@ -212,9 +212,11 @@ tasks.named('check') { dependsOn 'mantaWikiLangGate' }
 def mantaRoot = file(findProperty('mantaRoot') ?: '../manta')
 ext.mod_id = 'spatialaudiosystem'
 def mantaGateRef = findProperty('mantaGateRef') ?: 'origin/master'
-// ConsumerTreeGates.java (2026-10-29) asks seven more of Manta's consumer gates - hit arithmetic, vanilla font, font mix
+// ConsumerTreeGates.java (2026-10-29) asks eight more of Manta's consumer gates - hit arithmetic, vanilla font, font mix
 // with its record of shadowed labels (the user's decision), outside panel transform, dropdown motion, the control glyph
-// copy and governance linkability. They read Manta's src/main/java and build.gradle as well, so both are taken.
+// copy, governance linkability, and wiki lines (2026-10-30: each paragraph, list item and quote paragraph of a wiki
+// page on one line, as Manta's markdown draws them). They read Manta's src/main/java and build.gradle as well, so both
+// are taken.
 def mantaGatePaths = ['scripts/manta6_slot_vocabulary_gate.py', 'scripts/manta6_slot_vocabulary.py',
                       'scripts/manta6_workspace.py', 'notes/consumers.json', 'build.gradle', 'src/main/java',
                       'src/test/java/com/manta/api/screen/ConsumerReimplementationRules.java',
@@ -222,7 +224,7 @@ def mantaGatePaths = ['scripts/manta6_slot_vocabulary_gate.py', 'scripts/manta6_
 
 tasks.register('mantaConsumerGates') {
     group = 'verification'
-    description = "Manta's consumer-reading gates (slot vocabulary resolution, reimplementation rules, seven tree gates) over this tree"
+    description = "Manta's consumer-reading gates (slot vocabulary resolution, reimplementation rules, eight tree gates) over this tree"
     def javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
     doLast {
         def capture = { List<String> cmd ->
@@ -271,7 +273,7 @@ tasks.register('mantaConsumerGates') {
                 ['tree gates', [javaLauncher.get().executablePath.asFile.absolutePath,
                                 new File(manta, 'src/test/java/com/manta/api/screen/ConsumerTreeGates.java').absolutePath,
                                 '--consumer', projectDir.absolutePath, '--folder', entry.folder, '--manta', manta.absolutePath],
-                 "one consumer's tree vs seven of Manta's consumer gates: ${entry.folder} at"]]
+                 "one consumer's tree vs eight of Manta's consumer gates: ${entry.folder} at"]]
             def failed = []
             gates.each { name, cmd, judged ->
                 def (code, out) = capture(cmd)
@@ -289,7 +291,7 @@ tasks.register('mantaConsumerGates') {
                         + "do not pass this tree - ${failed.join('; ')}. Manta's next check reads this tree and fails on the same "
                         + "findings; fix them here (a false finding: a waiver in Manta) before this ships.")
             }
-            logger.lifecycle("mantaConsumerGates: PASS - slot vocabulary, reimplementation rules and the seven tree gates at ${mantaGateRef} (${sha.take(12)})")
+            logger.lifecycle("mantaConsumerGates: PASS - slot vocabulary, reimplementation rules and the eight tree gates at ${mantaGateRef} (${sha.take(12)})")
         } finally {
             project.delete(work)
         }
