@@ -22,6 +22,18 @@ in that clean run.
                   user, 2026-10-29: the record is asked too). Only where Manta records one here
   before-tree     Manta's last commit before ConsumerTreeGates: refused
 
+mantaTranslatableArgs (2026-11-05) - Manta's translatable-argument rule over this tree's COMPILED classes, a task of its own
+because it compiles the copy first - is asked by name by the mutants below, each run with that task on a copy BESIDE this
+checkout (<checkout>-cgate-<name>, removed after its run): build.gradle names Manta's jar as ../manta in some consumers,
+which a copy under build/ cannot resolve, so that copy could not compile:
+
+  translatable-<set>        a new class in that source set handing Component.translatable a UUID: the rule's FAIL,
+                            naming that class - one per source set in SOURCE_SETS
+  translatable-sweep-<call> each call the 2026-11-05 sweep changed here, put back (SWEEP): the FAIL naming that call
+  translatable-uncompiled   the task's compile dependency taken off build.gradle, and the UUID class added: the copy is
+                            never compiled, and the task refuses - COULD NOT TELL, never a pass
+  translatable-old-manta    Manta's last commit before the rule's entry point: refused
+
 Xenophora's copy of this harness replays two shapes from that repo's history. This repo shipped neither, so its changes
 are made up: each is the smallest that should give its gate's verdict, and the clean run shows it is not there already.
 The same file sits in TSU, SAS, ASC and Orca; only the block marked "this consumer" differs.
@@ -46,6 +58,21 @@ WAIVED = ("src/main/java/com/spatialaudiosystem/audio/SpatialGain.java", "camera
 # (file, one shadowed draw in it) from the record of shadowed labels Manta's ConsumerTreeGates keeps for this repo; None
 # where it keeps none.
 SHADOWED = None
+# Each call the 2026-11-05 translatable sweep changed here, as (name, (file, the call now, the call it was), what
+# Manta's translatable-argument rule names when that call is put back).
+SWEEP = [("translatable-sweep-handy",
+          ("src/main/java/com/spatialaudiosystem/client/HandyClient.java",
+           "        return (switch (parts.length) {\n"
+           "            case 1 -> net.minecraft.network.chat.Component.translatable(parts[0]);\n"
+           "            case 2 -> net.minecraft.network.chat.Component.translatable(parts[0], parts[1]);\n"
+           "            case 3 -> net.minecraft.network.chat.Component.translatable(parts[0], parts[1], parts[2]);\n"
+           "            default -> net.minecraft.network.chat.Component.translatable(parts[0], parts[1], parts[2], parts[3]);\n"
+           "        }).getString();\n",
+           "        Object[] args = new Object[parts.length - 1];\n"
+           "        System.arraycopy(parts, 1, args, 0, args.length);\n"
+           "        return net.minecraft.network.chat.Component.translatable(parts[0], args).getString();\n"),
+          ["client/HandyClient.java:", "Component.translatable(?): an array this gate cannot follow element by element"
+           " (it is handed to other code)"])]
 # ---
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,6 +86,7 @@ LAYOUTS = f"src/main/resources/assets/{MODID}/layouts"
 WIKI_PAGE = f"src/main/resources/assets/{MODID}/wiki/en_us/cgate-mutant.md"
 BEFORE_THE_ENTRY_POINTS = "18c66a73c63e"
 BEFORE_THE_TREE_GATES = "5c8226d092b1"
+BEFORE_THE_TRANSLATABLE_RULE = "572636db6c6e"
 UNPUSHED = "cgate-mutant-unpushed-key"
 BY_HAND = "CgateMutantSpan"
 BY_HAND_RULE = "camera-relative AABB spanning two BlockPos"
@@ -71,6 +99,15 @@ TREE_FAIL = {g: f"  {g}: FAIL" for g in TREE_GATES}
 CLEAN = ("RESULT: PASS - every textKey node reaches a key or a key pattern this consumer pushes",
          "RESULT: PASS - no finding but a waived one", "RESULT: PASS - eight gates, no finding",
          "mantaConsumerGates: PASS")
+TRANSLATABLE_TASK = "mantaTranslatableArgs"
+TRANSLATABLE_FAIL = "translatable arguments: FAIL"
+TRANSLATABLE_CLEAN = (" calls judged, no finding", "mantaTranslatableArgs: PASS - the translatable-argument rule at")
+ARG = "CgateMutantArg"
+ARG_BODY = ("final class CgateMutantArg {\n    net.minecraft.network.chat.Component c() {\n"
+            "        return net.minecraft.network.chat.Component.translatable(\"cgate.mutant\", java.util.UUID.randomUUID());\n"
+            "    }\n}\n")
+# The task's compile dependency, as build.gradle declares it.
+COMPILES_FIRST = "    dependsOn { shipped.collect { it.classesTaskName } }\n"
 
 
 def first_keyed(node):
@@ -251,8 +288,29 @@ MUTANTS.append(("before-tree", None, [f"-PmantaGateRef={BEFORE_THE_TREE_GATES}"]
                 ["lacks the consumer gates' entry points"], []))
 
 
-def copy_tree(name):
-    target = os.path.join(WORK, name)
+def uncompiled(tree):
+    """The task's compile dependency taken off the copy's build.gradle, and the UUID class added to main."""
+    mutate(tree, ("build.gradle", COMPILES_FIRST, ""))
+    add_class(MAIN, ARG, ARG_BODY)(tree)
+
+
+# A sixth element names the task the mutant runs (mantaConsumerGates when there is none).
+MUTANTS += [(f"translatable-{name}", add_class(source_dir, ARG, ARG_BODY), [],
+             [TRANSLATABLE_FAIL, f"{source_dir}/{ARG}.java:5 ",
+              'Component.translatable("cgate.mutant") arg[0]: java.util.UUID'], [], TRANSLATABLE_TASK)
+            for name, source_dir in SOURCE_SETS.items()]
+MUTANTS += [(name, change, [], [TRANSLATABLE_FAIL] + needles, [], TRANSLATABLE_TASK) for name, change, needles in SWEEP]
+MUTANTS += [("translatable-uncompiled", uncompiled, [],
+             ["translatable arguments: COULD NOT TELL", "no classes directory for main"], [], TRANSLATABLE_TASK),
+            ("translatable-old-manta", None, [f"-PmantaGateRef={BEFORE_THE_TRANSLATABLE_RULE}"],
+             ["lacks the translatable-argument rule's entry point"], [], TRANSLATABLE_TASK)]
+
+
+def copy_tree(name, beside=False):
+    """A copy under build/, or - for a task that compiles it - beside this checkout, where build.gradle's own relative
+    paths to the other checkouts (../manta) resolve as they do here."""
+    target = (os.path.join(os.path.dirname(ROOT), f"{os.path.basename(ROOT)}-cgate-{name}") if beside
+              else os.path.join(WORK, name))
     if os.path.exists(target):
         shutil.rmtree(target)
     os.makedirs(target)
@@ -294,8 +352,8 @@ def mutate(tree, change):
         fh.write(text.replace(old, new))
 
 
-def run_gates(tree, ref, extra):
-    args = [os.path.join(tree, GRADLEW), "-p", tree, "mantaConsumerGates", f"-PmantaRoot={MANTA}", "--no-build-cache",
+def run_gates(tree, ref, extra, task="mantaConsumerGates"):
+    args = [os.path.join(tree, GRADLEW), "-p", tree, task, f"-PmantaRoot={MANTA}", "--no-build-cache",
             "--console=plain"]
     if ref and not any(a.startswith("-PmantaGateRef=") for a in extra):
         args.append(f"-PmantaGateRef={ref}")
@@ -304,12 +362,12 @@ def run_gates(tree, ref, extra):
 
 
 def check_reaches_the_gates(tree):
-    """Whether `gradlew check` - the condition a push waits on - runs mantaConsumerGates: the mutants call the task by
-    name, which says nothing about `check` reaching it."""
+    """Whether `gradlew check` - the condition a push waits on - runs mantaConsumerGates and mantaTranslatableArgs: the
+    mutants call the tasks by name, which says nothing about `check` reaching them."""
     run = subprocess.run([os.path.join(tree, GRADLEW), "-p", tree, "check", "--dry-run", f"-PmantaRoot={MANTA}",
                           "--console=plain"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=tree)
     lines = (run.stdout + run.stderr).replace("\r\n", "\n").split("\n")
-    return run.returncode == 0 and ":mantaConsumerGates SKIPPED" in lines
+    return run.returncode == 0 and ":mantaConsumerGates SKIPPED" in lines and f":{TRANSLATABLE_TASK} SKIPPED" in lines
 
 
 def verdict(code, out, want, unwanted):
@@ -349,29 +407,39 @@ def main(args):
     os.makedirs(WORK, exist_ok=True)
     unchanged = copy_tree("unchanged")
     reached = check_reaches_the_gates(unchanged)
-    print(f"check reaches mantaConsumerGates: {'yes' if reached else 'NO'}", flush=True)
+    print(f"check reaches mantaConsumerGates and {TRANSLATABLE_TASK}: {'yes' if reached else 'NO'}", flush=True)
     if not reached:
         print("RESULT: FAIL -- `gradlew check` does not run the gates, so no push waits on them")
         return 1
     code, out = run_gates(unchanged, ref, [])
-    present = [n for m in chosen for n in m[3] if n in out]
-    ok = code == 0 and all(n in out for n in CLEAN) and not present
-    print(f"unchanged copy: {'PASS' if ok else 'FAIL'} (gradle exit {code}"
+    compiled = copy_tree("unchanged", beside=True)
+    tcode, tout = run_gates(compiled, ref, [], TRANSLATABLE_TASK)
+    shutil.rmtree(compiled, ignore_errors=True)
+    present = [n for m in chosen for n in m[3] if n in out or n in tout]
+    ok = (code == 0 and all(n in out for n in CLEAN) and tcode == 0 and all(n in tout for n in TRANSLATABLE_CLEAN)
+          and not present)
+    print(f"unchanged copy: {'PASS' if ok else 'FAIL'} (gradle exit {code}, {TRANSLATABLE_TASK} exit {tcode}"
           f"{'; needles already in the clean run: ' + str(present) if present else ''})", flush=True)
     if not ok:
         print(out[-3000:])
+        print(tout[-3000:])
         print("RESULT: FAIL -- the unchanged copy does not pass cleanly; no control can be read")
         return 1
     bad = 0
-    for name, change, extra, want, unwanted in chosen:
-        tree = copy_tree(name)
+    for name, change, extra, want, unwanted, *task in chosen:
+        tree = copy_tree(name, beside=bool(task))
         mutate(tree, change)
-        code, out = run_gates(tree, ref, extra)
+        code, out = run_gates(tree, ref, extra, *task)
+        if task:
+            shutil.rmtree(tree, ignore_errors=True)
         result = verdict(code, out, want, unwanted)
         print(f"{name}: {result} (gradle exit {code})", flush=True)
         if result != "RED":
             bad += 1
             print(out[-2500:])
+    left = [n for n in os.listdir(os.path.dirname(ROOT)) if n.startswith(f"{os.path.basename(ROOT)}-cgate-")]
+    if left:
+        print(f"copies beside this checkout that could not be removed (a gradle daemon may hold them): {left}")
     print(f"RESULT: {'PASS' if bad == 0 else 'FAIL'} -- {len(chosen)} mutants, {bad} not red with their own verdict")
     return 1 if bad else 0
 

@@ -299,6 +299,82 @@ tasks.register('mantaConsumerGates') {
 }
 tasks.named('check') { dependsOn 'mantaConsumerGates' }
 
+// Manta's translatable-argument rule (2026-11-05, the user's decision: one gate in Manta that every consumer's check runs
+// over itself): Component.translatable, translatableWithFallback, translatableEscape and new TranslatableContents given
+// only a String, a boxed primitive number or a Component. Anything else fails where the chat packet is encoded and
+// disconnects the client (TSU's /tsu-pantograph status, 2026-11-05: a UUID); a Boolean arrives drawn 1 / 0 and a
+// BigDecimal 1.0. Manta's ConsumerTranslatableArgs.java reads the COMPILED classes, so this is a task of its own that
+// compiles first - mantaConsumerGates reads sources, and the copies scripts/manta_consumer_gates.mutation.py makes for it
+// hold classes that do not compile. Taken from Manta's committed tree like the gates above, and launched with ASM (the
+// version Manta's own test runs it with) and the classpath the classes were compiled against, through an argument file:
+// that classpath is 13 to 18 thousand characters here (2026-11-05) against the 32 767 of a Windows command line. Every
+// source set but test is judged - each of them ships.
+def mantaAsm = configurations.detachedConfiguration(dependencies.create('org.ow2.asm:asm-analysis:9.8'))
+def mantaTranslatableProgram = 'src/test/java/com/manta/api/screen/ConsumerTranslatableArgs.java'
+
+tasks.register('mantaTranslatableArgs') {
+    group = 'verification'
+    description = "Manta's translatable-argument rule over this tree's compiled classes"
+    def javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    def shipped = sourceSets.matching { it.name != SourceSet.TEST_SOURCE_SET_NAME }
+    dependsOn { shipped.collect { it.classesTaskName } }
+    doLast {
+        def capture = { List<String> cmd ->
+            def proc = new ProcessBuilder(cmd).directory(projectDir).redirectErrorStream(true).start()
+            def out = new String(proc.inputStream.readAllBytes(), 'UTF-8')
+            [proc.waitFor(), out]
+        }
+        def (revCode, rev) = capture(['git', '-C', mantaRoot.absolutePath, 'rev-parse', '--verify', "${mantaGateRef}^{commit}".toString()])
+        if (revCode != 0) {
+            throw new GradleException("mantaTranslatableArgs: ${mantaGateRef} does not resolve in ${mantaRoot} (${rev.trim()}). "
+                    + "Refusing rather than reporting a pass it did not measure.")
+        }
+        def sha = rev.trim()
+        // Fresh per run and removed after it, as mantaConsumerGates' is.
+        def work = layout.buildDirectory.dir("tmp/mantaTranslatableArgs/${sha.take(12)}-${System.nanoTime()}").get().asFile
+        try {
+            work.mkdirs()
+            def zip = new File(work, 'manta.zip')
+            def (archCode, arch) = capture(['git', '-C', mantaRoot.absolutePath, 'archive', '--format=zip', '-o', zip.absolutePath, sha,
+                                            'notes/consumers.json', mantaTranslatableProgram])
+            if (archCode != 0) {
+                throw new GradleException("mantaTranslatableArgs: Manta ${mantaGateRef} (${sha.take(12)}) lacks the translatable-argument "
+                        + "rule's entry point - ${arch.trim()}. Refusing rather than reporting a pass it did not measure.")
+            }
+            def manta = new File(work, 'manta')
+            project.copy { from zipTree(zip); into manta }
+            def entry = new groovy.json.JsonSlurper().parse(new File(manta, 'notes/consumers.json')).consumers
+                    .find { it.modid == project.mod_id }
+            if (entry == null) {
+                throw new GradleException("mantaTranslatableArgs: ${project.mod_id} is not in Manta's notes/consumers.json at "
+                        + "${sha.take(12)}, so no Manta gate reads this tree - there is nothing to ask them")
+            }
+            // ASM first, so the version the rule was measured with wins over the one the compile classpath carries.
+            def classpath = (mantaAsm.files + shipped.collectMany { it.compileClasspath.files }).unique()
+            def argfile = new File(work, 'classpath.txt')
+            argfile.setText('-cp "' + classpath.collect { it.absolutePath.replace('\\', '/') }.join(File.pathSeparator) + '"\n', 'UTF-8')
+            def cmd = [javaLauncher.get().executablePath.asFile.absolutePath, "@${argfile.absolutePath}".toString(),
+                       new File(manta, mantaTranslatableProgram).absolutePath, '--folder', entry.folder]
+            shipped.each { cmd += ['--set', "${it.name}=${it.java.destinationDirectory.get().asFile.absolutePath}".toString()] }
+            def (code, out) = capture(cmd)
+            print out
+            def judged = "one consumer's compiled classes vs the translatable-argument rule: ${entry.folder} at".toString()
+            def verdict = code == 0 && out.contains(judged) && out.contains('RESULT: PASS') ? 'PASS'
+                    : code == 1 && out.contains('RESULT: FAIL') ? 'FAIL'
+                    : code == 2 && out.contains('COULD NOT TELL') ? 'COULD NOT TELL'
+                    : "NO VERDICT (exit ${code})"
+            if (verdict != 'PASS') {
+                throw new GradleException("mantaTranslatableArgs: Manta's translatable-argument rule at ${mantaGateRef} (${sha.take(12)}) "
+                        + "does not pass this tree - translatable arguments: ${verdict}. Fix the call it names here before this ships.")
+            }
+            logger.lifecycle("mantaTranslatableArgs: PASS - the translatable-argument rule at ${mantaGateRef} (${sha.take(12)})")
+        } finally {
+            project.delete(work)
+        }
+    }
+}
+tasks.named('check') { dependsOn 'mantaTranslatableArgs' }
+
 // Expand ${manta_version} in mods.toml from gradle.properties, keeping the required
 // range in lockstep with the embedded Manta. ${mod_version} comes from the build's own
 // version so the declared version cannot drift from the jar's filename — a hardcoded

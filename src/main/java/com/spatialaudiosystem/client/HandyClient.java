@@ -119,13 +119,18 @@ public final class HandyClient {
     /**
      * A notice sent as a lang key ("message." prefix, arguments after tabs) is translated here, in the
      * client's own language; a plain text is shown as it is. The handy sends keys; the range board still
-     * sends texts the server translated.
+     * sends texts the server translated. A notice carries at most three arguments (pos1_set / pos2_set:
+     * x, y, z), each passed as the String it arrived as, one call per count: an Object[] filled from the
+     * split is an array Manta's translatable-argument rule cannot follow element by element (2026-11-05).
      */
     static String resolve(String message) {
         if (message == null || !message.startsWith("message.")) return message;
         String[] parts = message.split("\t");
-        Object[] args = new Object[parts.length - 1];
-        System.arraycopy(parts, 1, args, 0, args.length);
-        return net.minecraft.network.chat.Component.translatable(parts[0], args).getString();
+        return (switch (parts.length) {
+            case 1 -> net.minecraft.network.chat.Component.translatable(parts[0]);
+            case 2 -> net.minecraft.network.chat.Component.translatable(parts[0], parts[1]);
+            case 3 -> net.minecraft.network.chat.Component.translatable(parts[0], parts[1], parts[2]);
+            default -> net.minecraft.network.chat.Component.translatable(parts[0], parts[1], parts[2], parts[3]);
+        }).getString();
     }
 }
