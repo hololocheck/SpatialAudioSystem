@@ -33,7 +33,7 @@ A mod for playing **your own audio files** inside the world. You write audio ont
 
 ## Hints and F1
 
-Turn on the **Hint** toggle in the top-right of any screen: hovering an element then shows a description in the lower left. With that on, pressing **F1** opens the wiki page for that feature. The **📖** button opens the page for the screen you are on.
+Turn on the **Hint** toggle in the top-right of any screen: resting the mouse on an element for about a second then shows a description in the lower left, and two seconds of work while it shows (moving the mouse, clicking, the wheel, keys) hides it until you rest again. With that on, pressing **F1** opens the wiki page for that feature. The **📖** button opens the page for the screen you are on.
 
 ## Access mode (public / private)
 
