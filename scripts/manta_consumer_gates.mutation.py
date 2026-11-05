@@ -17,7 +17,7 @@ in that clean run.
                   layer origin with no scale, a vanilla drawString, a raster width beside MantaText.drawInBatch, a screen
                   scaling its panel before super.render, a dropdownDown call, a page root keyed popup-slide, the hand
                   copy of the glyph set one glyph short, a CODING_GUIDELINES.md naming a Manta class no keep rule covers,
-                  a wiki page with a paragraph written on two lines
+                  a wiki page with a paragraph written on two lines, a layout whose × sits off BelugaExperience R4.17.7's place
   tree-shadow     a label of the file FontMix's record of shadowed labels names here drawn without its shadow (the
                   user, 2026-10-29: the record is asked too). Only where Manta records one here
   before-tree     Manta's last commit before ConsumerTreeGates: refused
@@ -84,6 +84,7 @@ COPIED = ("src", "gradle", "build.gradle", "settings.gradle", "gradle.properties
 OPTIONAL = ("CODING_GUIDELINES.md", "PERMISSION_MATRIX.md")
 LAYOUTS = f"src/main/resources/assets/{MODID}/layouts"
 WIKI_PAGE = f"src/main/resources/assets/{MODID}/wiki/en_us/cgate-mutant.md"
+HEADER_LAYOUT = f"{LAYOUTS}/cgate-mutant-header.json"
 BEFORE_THE_ENTRY_POINTS = "18c66a73c63e"
 BEFORE_THE_TREE_GATES = "5c8226d092b1"
 BEFORE_THE_TRANSLATABLE_RULE = "572636db6c6e"
@@ -94,10 +95,10 @@ BY_HAND_RULE = "camera-relative AABB spanning two BlockPos"
 SLOT_FAIL = "slot vocabulary: FAIL"
 RULES_FAIL = "reimplementation rules: FAIL"
 TREE_GATES = ("hit arithmetic", "vanilla font", "font mix", "outside panel transform", "dropdown motion",
-              "control glyph copy", "governance linkability", "wiki lines")
+              "control glyph copy", "governance linkability", "wiki lines", "header close")
 TREE_FAIL = {g: f"  {g}: FAIL" for g in TREE_GATES}
 CLEAN = ("RESULT: PASS - every textKey node reaches a key or a key pattern this consumer pushes",
-         "RESULT: PASS - no finding but a waived one", "RESULT: PASS - eight gates, no finding",
+         "RESULT: PASS - no finding but a waived one", "gates, no finding",
          "mantaConsumerGates: PASS")
 TRANSLATABLE_TASK = "mantaTranslatableArgs"
 TRANSLATABLE_FAIL = "translatable arguments: FAIL"
@@ -232,6 +233,17 @@ def wrapped_page(tree):
         fh.write("A paragraph\nwritten on two lines.\n")
 
 
+def misplaced_close(tree):
+    """A layout of its own whose × sits where the headers before R4.17.7 put it: (W-24, 10), 16 x 14."""
+    path = os.path.join(tree, *HEADER_LAYOUT.split("/"))
+    if os.path.exists(path):
+        raise SystemExit(f"REFUSED: {HEADER_LAYOUT} is already in the copy - the control adds a layout of its own")
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump({"tag": "div", "classes": ["dialog"], "x": 0, "y": 0, "w": 300, "h": 200,
+                   "children": [{"tag": "div", "classes": ["mc-popup-close"], "x": 276, "y": 10, "w": 16,
+                                 "h": 14, "clickable": True}]}, fh, indent=2)
+
+
 def others(gate):
     """Every gate's FAIL needle but `gate`'s: a tree mutant must fail its own gate and no other."""
     return [SLOT_FAIL, RULES_FAIL] + [TREE_FAIL[g] for g in TREE_GATES if g != gate]
@@ -280,6 +292,9 @@ MUTANTS += [
     ("tree-governance", govern, [], [TREE_FAIL["governance linkability"], "ControlGlyphs (com.manta.design.ControlGlyphs)"],
      others("governance linkability")),
     ("tree-wiki-lines", wrapped_page, [], [TREE_FAIL["wiki lines"], "cgate-mutant.md:2"], others("wiki lines")),
+    ("tree-header-close", misplaced_close, [], [TREE_FAIL["header close"],
+                                                 "cgate-mutant-header.json: mc-popup-close [mc-popup-close] at "
+                                                 "(276, 10, 16, 14), not (268, 4, 24, 24)"], others("header close")),
 ]
 if SHADOWED:
     MUTANTS.append(("tree-shadow", (SHADOWED[0], SHADOWED[1], SHADOWED[1].replace(", true);", ", false);")), [],
