@@ -155,6 +155,9 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         this.pendingAudioData = audioData;
         this.pendingFileName = fileName;
         this.pendingFormat = format;
+        // The screen shows the pick from the update tag: without an update the client kept showing the previous pick,
+        // or none, until something else changed the block (measured on the real client 2026-11-05).
+        syncToClients();
     }
 
     public String getPendingFileName() {
@@ -177,6 +180,7 @@ public class RecordingDeviceBlockEntity extends BlockEntity implements MenuProvi
         this.recordingProgress = 0;
         this.isRecording = false;
         setChanged();
+        syncToClients();   // the pick the screen shows goes with it (setPendingAudio)
     }
 
     public void clearMediaAudioData() {
