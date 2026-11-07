@@ -31,6 +31,10 @@ class UntranslatedTextGateTest {
 
     private static final Path SOURCE = findSourceTree();
 
+    /** Every locale the mod ships; zh_hk and zh_tw are converted from zh_cn (2026-11-07). */
+    private static final List<String> LANG_FILES =
+            List.of("en_us.json", "ja_jp.json", "zh_cn.json", "zh_hk.json", "zh_tw.json");
+
     /**
      * The mod's source tree, wherever the test happens to be run from.
      *
@@ -108,7 +112,7 @@ class UntranslatedTextGateTest {
         List<String> bad = new ArrayList<>();
         int files = 0;
         int values = 0;
-        for (String name : List.of("en_us.json", "ja_jp.json")) {
+        for (String name : LANG_FILES) {
             com.google.gson.JsonObject doc = com.google.gson.JsonParser.parseString(
                     Files.readString(lang.resolve(name))).getAsJsonObject();
             files++;
@@ -124,7 +128,7 @@ class UntranslatedTextGateTest {
                 }
             }
         }
-        assertThat(files).isEqualTo(2);
+        assertThat(files).isEqualTo(LANG_FILES.size());
         assertThat(values).as("the walk read the lang files").isGreaterThan(100);
         assertThat(bad).as("format specifiers Minecraft cannot render").isEmpty();
     }
@@ -155,12 +159,14 @@ class UntranslatedTextGateTest {
      * outside ascii.png is counted as a full-width unifont glyph (9). Bold adds one per glyph.
      */
     @Test
-    @DisplayName("SAS-UI-005: every static label fits its box in both locales, by vanilla's glyph widths")
+    @DisplayName("SAS-UI-005: every static label fits its box in every locale, by vanilla's glyph widths")
     void staticLabelsFitTheirBoxes() throws Exception {
         VanillaAscii metrics = VanillaAscii.load();
         Path layouts = SOURCE.resolveSibling("resources").resolve("assets/spatialaudiosystem/layouts");
-        java.util.Map<String, com.google.gson.JsonObject> langs = java.util.Map.of(
-                "en_us", lang("en_us.json"), "ja_jp", lang("ja_jp.json"));
+        java.util.Map<String, com.google.gson.JsonObject> langs = new java.util.LinkedHashMap<>();
+        for (String name : LANG_FILES) {
+            langs.put(name.substring(0, name.length() - ".json".length()), lang(name));
+        }
         List<String> bad = new ArrayList<>();
         int labels = 0;
         try (Stream<Path> files = Files.list(layouts)) {
