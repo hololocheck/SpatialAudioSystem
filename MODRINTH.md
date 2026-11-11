@@ -31,7 +31,7 @@ through the BelugaExperience design workflow on top of the Manta UI runtime.
 |---|---|
 | Minecraft | 1.21.1 |
 | NeoForge | 21.1.220+ |
-| **Manta** | 2.5.0 — bundled in the jar, no separate download |
+| **Manta** | 2.94.0 — bundled in the jar, no separate download (it carries the CEF runtime for in-game video; nothing is downloaded and no .exe is included) |
 
 ### Open source
 
@@ -70,7 +70,7 @@ mp3 / ogg / wav を記憶装置で記録媒体に書き込み、再生装置で�
 |---|---|
 | Minecraft | 1.21.1 |
 | NeoForge | 21.1.220+ |
-| **Manta** | 2.5.0 — jar に同梱、別途ダウンロード不要 |
+| **Manta** | 2.94.0 — jar に同梱、別途ダウンロード不要（ゲーム内動画用の CEF を同梱。ダウンロードは行わず、.exe は含まない） |
 
 ### オープンソース
 

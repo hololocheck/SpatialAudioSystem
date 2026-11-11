@@ -2,6 +2,32 @@
 
 > Japanese version: [CHANGELOG.md](CHANGELOG.md)
 
+## [1.2.0] - 2026-11-11
+
+### Changed
+
+- **Manta 2.94.0 (Manta 7.1)** (embedded Manta updated, required range `[2.94.0,3)`). The CEF runtime (Chromium Embedded Framework 122) that plays in-game videos is now **bundled in the jar** and extracted to `<game folder>/mcss-chrome-native` the first time a video plays. Nothing is downloaded, and the jar contains **no executable (.exe)**: CEF's child processes are started by the Java that runs the game (`java.exe` / `javaw.exe`), which loads the bundled DLLs — in Task Manager they show up as Java processes. The jar is now about 140 MB. Videos that need DRM (Widevine) and pop-up windows opened from links inside a video do not open.
+  Update TSU at the same time (TSU 1.2.0 embeds the same Manta).
+- **F1 hints** read as natural Japanese, and what nine of them said was corrected against the code; English and Chinese say what the code does too.
+- UI labels, playlist counts and tooltips are drawn with Manta's raster font. Scrollbar thumbs can be grabbed and dragged.
+
+### Added
+
+- **Chinese UI**: zh_cn, with zh_hk / zh_tw converted from it.
+- **Wiki**: a Videos page with the SAS guide (English, Japanese and Chinese).
+
+### Fixed
+
+- The recording device's screen shows a picked or cleared file at once.
+- `/clone ... move` moves a playback or recording device's contents instead of doubling them.
+- A memory device's medium keeps its length with its sound (on clear, and on a rewrite that cannot be timed).
+- A late listener who has played a sound before hears it without a transfer.
+- In the schedule popup, releasing a running quick-craft goes through.
+
+### Internal
+
+- Network version 1.8. **Older clients are refused at login** — update the client and the server together.
+
 ## [1.1.0] - 2026-09-05
 
 ### Changed
