@@ -2,6 +2,16 @@
 
 > Japanese version: [CHANGELOG.md](CHANGELOG.md)
 
+## [1.2.2] - 2026-11-12
+
+### Changed
+
+- **Manta 2.95.1** (embedded Manta updated, required range `[2.95.1,3)`). Update TSU at the same time (TSU 1.2.2 embeds the same Manta).
+
+### Fixed
+
+- A Markdown table whose separator line (`|---|---|`) has very many columns (several hundred or more) failed to load with a StackOverflowError (a Manta fix).
+
 ## [1.2.1] - 2026-11-12
 
 ### Changed
