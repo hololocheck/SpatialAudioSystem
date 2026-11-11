@@ -2,6 +2,22 @@
 
 > Japanese version: [CHANGELOG.md](CHANGELOG.md)
 
+## [1.2.1] - 2026-11-12
+
+### Changed
+
+- **Manta 2.95.0** (embedded Manta updated, required range `[2.95.0,3)`). The wiki's video cards start, play and show captions better:
+  - The video runtime (extracting and starting CEF) gets ready while the title screen is up, so a video shows at once even when the wiki is opened right after joining a world. While it is getting ready or loading, the card shows a loading screen with a progress bar (a video that cannot be played shows YouTube's message).
+  - A wiki video card draws Manta's own control bar (play/pause, seek bar, time, captions, mute) instead of YouTube's; it goes the moment the pointer leaves the video, and its seek bar can be dragged.
+  - Captions are off at first. The bar's CC turns them on; where the video has none in the game's language, its English captions are shown auto-translated.
+  - In the panel opened with "Open as Panel", YouTube's progress bar can be dragged.
+  Update TSU at the same time (TSU 1.2.1 embeds the same Manta).
+- Range outlines no longer look through every block entity around the player each frame (drawing is lighter where other mods' machines are many).
+
+### Fixed
+
+- The first video opened could take a while to show its picture, or not show it until it was pressed.
+
 ## [1.2.0] - 2026-11-11
 
 ### Changed
