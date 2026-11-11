@@ -92,13 +92,20 @@ public class RangeRenderer {
             SMOOTH.reset();
         }
 
-        // Render range for playback devices with showRange enabled
+        // Render range for playback devices with showRange enabled. Only the chunks that hold one are walked: walking
+        // every block entity around the player every frame cost 11.4 % of the render thread with 1000 other mods'
+        // block entities nearby and no device at all (measured 2026-11-11).
+        it.unimi.dsi.fastutil.longs.LongSet showing =
+                com.spatialaudiosystem.blockentity.ShownRangeDevices.chunksShowing(level);
         BlockPos playerPos = mc.player.blockPosition();
         int chunkRange = 16;
         int playerChunkX = playerPos.getX() >> 4;
         int playerChunkZ = playerPos.getZ() >> 4;
-        for (int cx = -chunkRange; cx <= chunkRange; cx++) {
+        for (int cx = -chunkRange; cx <= chunkRange && showing != null; cx++) {
             for (int cz = -chunkRange; cz <= chunkRange; cz++) {
+                if (!showing.contains(net.minecraft.world.level.ChunkPos.asLong(playerChunkX + cx, playerChunkZ + cz))) {
+                    continue;
+                }
                 LevelChunk chunk = level.getChunkSource().getChunkNow(playerChunkX + cx, playerChunkZ + cz);
                 if (chunk != null) {
                     for (BlockEntity be : chunk.getBlockEntities().values()) {

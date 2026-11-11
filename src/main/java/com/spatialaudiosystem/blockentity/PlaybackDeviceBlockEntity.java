@@ -450,6 +450,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
             dataHost.close();
             dataHost = null;
         }
+        if (level != null && level.isClientSide()) ShownRangeDevices.untrack(this);
     }
 
     @Override
@@ -1182,6 +1183,7 @@ public class PlaybackDeviceBlockEntity extends BlockEntity implements MenuProvid
     @Override
     public void setLevel(net.minecraft.world.level.Level level) {
         super.setLevel(level);
+        if (level.isClientSide()) ShownRangeDevices.track(this);   // the range renderer's devices
         if (!level.isClientSide() && level.getServer() != null) {
             migrateInventory();
         }
