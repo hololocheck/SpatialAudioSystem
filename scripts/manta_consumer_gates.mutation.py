@@ -17,7 +17,8 @@ in that clean run.
                   layer origin with no scale, a vanilla drawString, a raster width beside MantaText.drawInBatch, a screen
                   scaling its panel before super.render, a dropdownDown call, a page root keyed popup-slide, the hand
                   copy of the glyph set one glyph short, a CODING_GUIDELINES.md naming a Manta class no keep rule covers,
-                  a wiki page with a paragraph written on two lines, a layout whose × sits off BelugaExperience R4.17.7's place
+                  a wiki page with a paragraph written on two lines, a layout whose × sits off BelugaExperience R4.17.7's place,
+                  a ja_jp.json one key short of en_us's (2026-11-13)
   tree-shadow     a label of the file FontMix's record of shadowed labels names here drawn without its shadow (the
                   user, 2026-10-29: the record is asked too). Only where Manta records one here
   before-tree     Manta's last commit before ConsumerTreeGates: refused
@@ -95,7 +96,8 @@ BY_HAND_RULE = "camera-relative AABB spanning two BlockPos"
 SLOT_FAIL = "slot vocabulary: FAIL"
 RULES_FAIL = "reimplementation rules: FAIL"
 TREE_GATES = ("hit arithmetic", "vanilla font", "font mix", "outside panel transform", "dropdown motion",
-              "control glyph copy", "governance linkability", "wiki lines", "header close")
+              "control glyph copy", "governance linkability", "wiki lines", "header close",
+              "language files")
 TREE_FAIL = {g: f"  {g}: FAIL" for g in TREE_GATES}
 CLEAN = ("RESULT: PASS - every textKey node reaches a key or a key pattern this consumer pushes",
          "RESULT: PASS - no finding but a waived one", "gates, no finding",
@@ -244,6 +246,24 @@ def misplaced_close(tree):
                                  "h": 14, "clickable": True}]}, fh, indent=2)
 
 
+def dropped_key(tree):
+    """This repo's ja_jp.json with its first key removed: one key short of the en_us.json beside it."""
+    assets = os.path.join(tree, "src", "main", "resources", "assets")
+    files = sorted(os.path.join(assets, ns, "lang", "ja_jp.json") for ns in os.listdir(assets)
+                   if os.path.isfile(os.path.join(assets, ns, "lang", "ja_jp.json")))
+    if len(files) != 1:
+        raise SystemExit(f"REFUSED: {len(files)} ja_jp.json under src/main - the control shortens one")
+    with open(files[0], encoding="utf-8") as fh:
+        doc = json.load(fh)
+    if not isinstance(doc, dict) or not doc:
+        raise SystemExit("REFUSED: ja_jp.json holds no key - nothing to remove")
+    key = next(iter(doc))
+    print(f"  tree-lang: {key} removed from ja_jp.json", flush=True)
+    del doc[key]
+    with open(files[0], "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=2)
+
+
 def others(gate):
     """Every gate's FAIL needle but `gate`'s: a tree mutant must fail its own gate and no other."""
     return [SLOT_FAIL, RULES_FAIL] + [TREE_FAIL[g] for g in TREE_GATES if g != gate]
@@ -295,6 +315,8 @@ MUTANTS += [
     ("tree-header-close", misplaced_close, [], [TREE_FAIL["header close"],
                                                  "cgate-mutant-header.json: mc-popup-close [mc-popup-close] at "
                                                  "(276, 10, 16, 14), not (268, 4, 24, 24)"], others("header close")),
+    ("tree-lang", dropped_key, [], [TREE_FAIL["language files"], "ja_jp.json: lacks 1 key(s) en_us has, drawn in English"],
+     others("language files")),
 ]
 if SHADOWED:
     MUTANTS.append(("tree-shadow", (SHADOWED[0], SHADOWED[1], SHADOWED[1].replace(", true);", ", false);")), [],
